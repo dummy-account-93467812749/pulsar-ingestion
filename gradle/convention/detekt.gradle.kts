@@ -41,7 +41,8 @@ configure<DetektExtension> {
     // Explicitly set source directories for Detekt.
     source.setFrom(files(
         project.layout.projectDirectory.dir("src/main/kotlin"),
-        project.layout.projectDirectory.dir("src/test/kotlin")
+        project.layout.projectDirectory.dir("src/test/kotlin"),
+        project.layout.projectDirectory.dir("src/integrationTest/kotlin")
     ))
 }
 
