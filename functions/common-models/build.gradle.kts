@@ -1,9 +1,10 @@
-plugins {
-    kotlin("jvm")
-}
+// Apply conventions
+apply(from = "${rootDir}/gradle/convention/kotlin-library.gradle.kts")
+apply(from = "${rootDir}/gradle/convention/detekt.gradle.kts")
+apply(from = "${rootDir}/gradle/convention/ktlint.gradle.kts")
 
-dependencies {
-    implementation(libs.kotlin.stdlib)
-    // api(libs.pulsar.client.api) // Example: if models needed Pulsar types
-                                 // No 'pulsar.client.api' alias in libs.versions.toml
-}
+// Specific dependencies for this module, if any, beyond convention.
+// For example, if it needs to expose Pulsar types in its API:
+// dependencies {
+//     api(libs.pulsar.client.api) // Ensure libs.pulsar.client.api is in libs.versions.toml
+// }

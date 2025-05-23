@@ -1,21 +1,20 @@
-// tests/integration/build.gradle.kts
-plugins {
-    id("java-library") // Fine for test modules
-    // Kotlin and Ktlint are applied from the root project's subprojects block
-}
+// Apply conventions
+apply(from = "${rootDir}/gradle/convention/kotlin-library.gradle.kts")
+apply(from = "${rootDir}/gradle/convention/detekt.gradle.kts")
+apply(from = "${rootDir}/gradle/convention/ktlint.gradle.kts")
 
-// Define a custom source set for integration tests
+// Define a custom source set for integration tests (existing)
 sourceSets {
     create("integrationTest") {
         compileClasspath += sourceSets.main.get().output + sourceSets.test.get().output
         runtimeClasspath += sourceSets.main.get().output + sourceSets.test.get().output
-        java.srcDir("src/integrationTest/java")
+        java.srcDir("src/integrationTest/java") // Keep if Java sources are used
         kotlin.srcDir("src/integrationTest/kotlin")
         resources.srcDir("src/integrationTest/resources")
     }
 }
 
-// Create a task to run integration tests
+// Create a task to run integration tests (existing)
 val integrationTest by tasks.registering(Test::class) {
     description = "Runs integration tests."
     group = "verification"
@@ -28,25 +27,26 @@ val integrationTest by tasks.registering(Test::class) {
     }
 }
 
-// Make 'check' task depend on integration tests
+// Make 'check' task depend on integration tests (existing)
 tasks.check {
     dependsOn(integrationTest)
 }
 
+// Dependencies needed for integration tests (existing)
 dependencies {
-    // Dependencies needed for integration tests
     "integrationTestImplementation"(project(":functions:common-models"))
-    "integrationTestImplementation"(project(":functions:acme-enrich")) // If you test the function directly
-    "integrationTestImplementation"(libs.pulsar.client.original) // Full client for testing
+    "integrationTestImplementation"(project(":functions:acme-enrich"))
+    "integrationTestImplementation"(libs.pulsar.client) // Changed from pulsar.client.original to pulsar.client
+
     "integrationTestImplementation"(libs.slf4j.api)
     "integrationTestRuntimeOnly"(libs.logback.classic)
 
     // Testcontainers
-    "integrationTestImplementation"(platform(libs.testcontainers.bom)) // BOM
+    "integrationTestImplementation"(platform(libs.testcontainers.bom))
     "integrationTestImplementation"(libs.testcontainers.junit.jupiter)
     "integrationTestImplementation"(libs.testcontainers.pulsar)
 
-    // Regular test dependencies for integration tests (JUnit, MockK)
+    // Regular test dependencies
     "integrationTestImplementation"(libs.junit.jupiter.api)
     "integrationTestImplementation"(libs.junit.jupiter.params)
     "integrationTestRuntimeOnly"(libs.junit.jupiter.engine)
