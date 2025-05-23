@@ -2,5 +2,42 @@
 kotlin = "1.9.0"
 pulsar = "3.1.1"
 detekt = "1.22.0"
+junitJupiter = "5.9.3"
+mockk = "1.13.5"
+testcontainers = "1.19.0"
+slf4j = "2.0.7"
+logback = "1.4.11"
+ktlintPlugin = "11.6.1" # Renamed to avoid potential conflict
+shadowPlugin = "8.1.1" # Added for consistency
+
+[libraries]
+# Kotlin
+kotlin-stdlib = { module = "org.jetbrains.kotlin:kotlin-stdlib-jdk8", version.ref = "kotlin" }
+kotlin-reflect = { module = "org.jetbrains.kotlin:kotlin-reflect", version.ref = "kotlin" }
+
+# JUnit
+junit-jupiter-api = { module = "org.junit.jupiter:junit-jupiter-api", version.ref = "junitJupiter" }
+junit-jupiter-engine = { module = "org.junit.jupiter:junit-jupiter-engine", version.ref = "junitJupiter" }
+junit-jupiter-params = { module = "org.junit.jupiter:junit-jupiter-params", version.ref = "junitJupiter" }
+
+# MockK
+mockk = { module = "io.mockk:mockk", version.ref = "mockk" }
+
+# Testcontainers
+testcontainers-bom = { group = "org.testcontainers", name = "testcontainers-bom", version.ref = "testcontainers" }
+testcontainers-junit-jupiter = { module = "org.testcontainers:junit-jupiter" } # Version from BOM
+testcontainers-pulsar = { module = "org.testcontainers:pulsar" } # Version from BOM
+
+# Pulsar
+pulsar-client = { module = "org.apache.pulsar:pulsar-client", version.ref = "pulsar" }
+pulsar-client-api = { module = "org.apache.pulsar:pulsar-client-api", version.ref = "pulsar" }
+pulsar-functions-api = { module = "org.apache.pulsar:pulsar-functions-api", version.ref = "pulsar" }
+
+# Logging
+slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
+logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
+
 [plugins]
-shadow = { id = "com.github.johnrengelman.shadow", version = "8.1.1" }
+shadow = { id = "com.github.johnrengelman.shadow", version.ref = "shadowPlugin" }
+detekt = { id = "io.gitlab.arturbosch.detekt", version.ref = "detekt" }
+ktlint = { id = "org.jlleitschuh.gradle.ktlint", version.ref = "ktlintPlugin" }

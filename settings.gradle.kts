@@ -1,2 +1,2 @@
 rootProject.name = "pulsar-ingestion"
-include("connectors:placeholder", "functions:placeholder", "tests:unit", "tests:integration")
+include("functions:common-models", "functions:acme-enrich", "tests:integration")
