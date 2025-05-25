@@ -30,6 +30,8 @@ To build the project, run:
 ./gradlew build
 ```
 
+For more detailed instructions on building, testing, and working with subprojects, please see [`BUILDING.md`](BUILDING.md).
+
 ## Contributing
 
 Details on contributing will be added soon.

@@ -1,6 +1,5 @@
 plugins {
     kotlin("jvm") version "1.9.20" apply false
-    java apply false
 }
 
 allprojects {
@@ -14,9 +13,8 @@ allprojects {
 
 subprojects {
     apply(plugin = "org.jetbrains.kotlin.jvm")
-    apply(plugin = "java")
 
-    java {
+    extensions.configure<JavaPluginExtension> {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
@@ -35,4 +33,8 @@ subprojects {
     tasks.withType<Test> {
         useJUnitPlatform()
     }
+}
+
+tasks.wrapper {
+    gradleVersion = "8.5" // Or any other version you prefer
 }
