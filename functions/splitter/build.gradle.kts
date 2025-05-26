@@ -12,8 +12,17 @@ dependencies {
     implementation(platform(libs.pulsar.bom))
     implementation("org.apache.pulsar:pulsar-functions-api") // You could also add this to libs.versions.toml
     implementation(project(":common"))
+    implementation(libs.jackson.module.kotlin)
+    implementation("org.apache.pulsar:pulsar-functions-api:${libs.versions.pulsar.get()}")
+
 
     testImplementation(project(":test-kit"))
+    testImplementation(libs.jackson.module.kotlin)
+
+    // Integration Test Dependencies
+    integrationTestImplementation(project(":test-kit"))
+    integrationTestImplementation(libs.testcontainers.pulsar)
+    integrationTestImplementation(libs.pulsar.functions.local.runner)
 }
 
 /* -------------- integration-test source set -------------- */
@@ -31,7 +40,7 @@ configurations {
 
 
 tasks.register<Test>("integrationTest") {
-    description = "Spin Testcontainers Pulsar and run E2E tests."
+    description = "Runs integration tests for the splitter function." // Updated description
     group = "verification"
     testClassesDirs = integrationTest.output.classesDirs
     classpath = integrationTest.runtimeClasspath
@@ -41,9 +50,9 @@ tasks.register<Test>("integrationTest") {
 
 /* -------------- fat-JAR --------------- */
 tasks.shadowJar {
-    archiveClassifier.set("")                          // e.g., translators.jar
+    archiveClassifier.set("")                          // e.g., splitter.jar
     // Consider making the Main-Class configurable or derived if you have multiple functions per module
-    manifest { attributes["Main-Class"] = "com.acme.pipeline.functions.SplitterFunction" }
+    manifest { attributes["Main-Class"] = "com.example.pulsar.functions.routing.EventTypeSplitter" } // Updated Main-Class
 }
 
 tasks.register<Zip>("makeNar") {
@@ -58,7 +67,7 @@ tasks.register<Zip>("makeNar") {
 /* -------------- container image -------------- */
 jib {
     from.image = "eclipse-temurin:21-jre"
-    to.image   = "ghcr.io/acme/${project.name}:${project.version}"
+    to.image   = "ghcr.io/example-pulsar/${project.name}:${project.version}" // Updated image path
     container.entrypoint = listOf()                    // Function Mesh handles cmd
     // Consider setting container.appRoot or other jib configurations
 }
