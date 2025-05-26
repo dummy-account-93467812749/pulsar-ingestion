@@ -8,5 +8,6 @@ include(
     ":connectors:grpc-source",
     ":functions:splitter",
     ":functions:transforms:stateless",
-    ":functions:transforms:stateful"
+    ":functions:transforms:stateful",
+    ":functions:transforms:translators"
 )
