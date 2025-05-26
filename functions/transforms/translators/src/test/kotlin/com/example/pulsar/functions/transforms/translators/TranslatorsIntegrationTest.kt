@@ -35,7 +35,7 @@ class TranslatorsIntegrationTest {
         sharedBrokerLocalRunner.start(false) 
 
         client = PulsarClient.builder()
-            .serviceUrl(sharedBrokerLocalRunner.brokerServiceUrl)
+            .serviceUrl(sharedBrokerLocalRunner.getBrokerServiceURL()) // Trying getBrokerServiceURL()
             .build()
     }
 
@@ -65,7 +65,7 @@ class TranslatorsIntegrationTest {
                 className = functionClass.name
                 autoAck = true
             })
-            .brokerServiceUrl(sharedBrokerLocalRunner.brokerServiceUrl) // Use the shared broker
+            .brokerServiceUrl(sharedBrokerLocalRunner.getBrokerServiceURL()) // Trying getBrokerServiceURL()
             .build()
         
         try {
