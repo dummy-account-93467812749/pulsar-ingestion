@@ -97,4 +97,25 @@ Refer to the official Pulsar documentation for more details on function configur
 ## Known Issues
 
 - The integration tests (specifically `TranslatorsIntegrationTest.kt`) are currently broken due to an API change in `org.apache.pulsar:pulsar-functions-local-runner:4.0.0`. The method for obtaining the broker service URL needs to be updated.
-- As a temporary workaround to allow the main project to build, all tests within this `translators` module have been disabled in `functions/transforms/translators/build.gradle.kts`. These tests need to be fixed and re-enabled.
+- As a temporary workaround to allow the main project to build, all tests within this `translators` module have been disabled in `functions/translators/build.gradle.kts`. These tests need to be fixed and re-enabled.
+
+### How to Re-enable Tests
+
+To re-enable tests for this module, follow these steps:
+
+1.  **Modify `functions/translators/build.gradle.kts`**:
+    *   Allow `TranslatorsIntegrationTest.kt` to be compiled by commenting out or removing the following line:
+        ```kotlin
+        sourceSets.test.get().kotlin.exclude("**/TranslatorsIntegrationTest.kt")
+        ```
+    *   Allow tests in this module to run by commenting out or removing the following block:
+        ```kotlin
+        tasks.named<Test>("test") {
+            enabled = false
+        }
+        ```
+
+2.  **Fix `TranslatorsIntegrationTest.kt`**:
+    *   After re-enabling the tests, the `TranslatorsIntegrationTest.kt` file will still have compilation errors.
+    *   The primary error is `Unresolved reference: getBrokerServiceURL` (or similar, depending on the last attempted fix). This is due to an API change in the `org.apache.pulsar:pulsar-functions-local-runner:4.0.0` library.
+    *   You will need to consult the documentation for this library (version 4.0.0) to find the correct way to obtain the broker service URL from a `LocalRunner` instance and update the test file accordingly.
