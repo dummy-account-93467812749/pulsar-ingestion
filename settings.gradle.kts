@@ -7,6 +7,5 @@ include(
     ":connectors:rabbitmq-source",
     ":connectors:grpc-source",
     ":functions:splitter",
-    ":functions:transforms:core",
-    ":functions:transforms:translators"
+    ":functions:translators"
 )
