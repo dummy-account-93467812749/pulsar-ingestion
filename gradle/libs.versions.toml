@@ -1,0 +1,58 @@
+[versions]
+# Build and Language
+kotlin                 = "2.1.21"   # latest stable Kotlin
+spotless               = "7.0.3"    # com.diffplug.spotless Gradle plugin :contentReference[oaicite:0]{index=0}
+ktlint                 = "12.3.0"   # org.jlleitschuh.gradle.ktlint plugin :contentReference[oaicite:1]{index=1}
+shadow                 = "8.1.1"    # com.github.johnrengelman.shadow :contentReference[oaicite:2]{index=2}
+jib                    = "3.4.5"    # com.google.cloud.tools.jib :contentReference[oaicite:3]{index=3}
+dokka                  = "2.0.0"    # org.jetbrains.dokka :contentReference[oaicite:4]{index=4}
+benManesVersions       = "0.52.0"   # com.github.ben-manes.versions :contentReference[oaicite:5]{index=5}
+
+# Core Libraries
+pulsar                 = "4.0.4"    # Apache Pulsar latest LTS :contentReference[oaicite:6]{index=6}
+jackson                = "2.17.2"   # Jackson releases :contentReference[oaicite:7]{index=7}
+
+# Testing Frameworks & Tools
+junitJupiter           = "5.11.0"   # JUnit Jupiter :contentReference[oaicite:8]{index=8}
+testcontainers         = "1.19.8"   # Testcontainers Core :contentReference[oaicite:9]{index=9}
+mockitoKotlin          = "5.4.0"    # mockito-kotlin :contentReference[oaicite:10]{index=10}
+mockk                  = "1.14.2"   # MockK :contentReference[oaicite:11]{index=11}
+
+# Protobuf (required by LocalRunner)
+protobufJava           = "3.25.0"   # Protocol Buffers Java :contentReference[oaicite:12]{index=12}
+
+[libraries]
+# Pulsar APIs
+pulsar-functions-api             = { group = "org.apache.pulsar", name = "pulsar-functions-api",     version.ref = "pulsar" }
+pulsar-functions-local-runner    = { group = "org.apache.pulsar", name = "pulsar-functions-local-runner-original", version.ref = "pulsar" }
+pulsar-bom                       = { group = "org.apache.pulsar", name = "pulsar-bom",                 version.ref = "pulsar" }
+pulsar-client                    = { group = "org.apache.pulsar", name = "pulsar-client",              version.ref = "pulsar" }
+pulsar-io-core                   = { group = "org.apache.pulsar", name = "pulsar-io-core",             version.ref = "pulsar" }  # added missing ref
+pulsar-client-admin              = { group = "org.apache.pulsar", name = "pulsar-client-admin",      version.ref = "pulsar" } 
+
+# Kotlin
+kotlin-stdlib-jdk8               = { module = "org.jetbrains.kotlin:kotlin-stdlib-jdk8", version.ref = "kotlin" }
+kotlin-test-junit5              = { module = "org.jetbrains.kotlin:kotlin-test-junit5",    version.ref = "kotlin" }
+
+# Jackson JSON
+jackson-databind                = { group = "com.fasterxml.jackson.core",   name = "jackson-databind",     version.ref = "jackson" }
+jackson-module-kotlin           = { group = "com.fasterxml.jackson.module", name = "jackson-module-kotlin",version.ref = "jackson" }
+
+# Testing libraries
+junit-jupiter-api               = { group = "org.junit.jupiter", name = "junit-jupiter-api", version.ref = "junitJupiter" }
+junit-jupiter-engine            = { group = "org.junit.jupiter", name = "junit-jupiter-engine",version.ref = "junitJupiter" }
+junit-jupiter                   = { group = "org.junit.jupiter", name = "junit-jupiter",       version.ref = "junitJupiter" }
+mockito-kotlin                  = { group = "org.mockito.kotlin", name = "mockito-kotlin",     version.ref = "mockitoKotlin" }
+mockk                           = { group = "io.mockk",             name = "mockk",              version.ref = "mockk" }
+testcontainers-pulsar           = { group = "org.testcontainers",   name = "pulsar",             version.ref = "testcontainers" }
+
+# Protobuf (required by LocalRunner)
+protobufJava = { group = "com.google.protobuf", name = "protobuf-java", version.ref = "protobufJava" }
+
+[plugins]
+kotlin-jvm                      = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+shadow                          = { id = "com.github.johnrengelman.shadow", version.ref = "shadow" }
+jib                             = { id = "com.google.cloud.tools.jib", version.ref = "jib" }
+dokka                           = { id = "org.jetbrains.dokka", version.ref = "dokka" }
+spotless                        = { id = "com.diffplug.spotless", version.ref = "spotless" }
+ben-manes-versions              = { id = "com.github.ben-manes.versions", version.ref = "benManesVersions" }

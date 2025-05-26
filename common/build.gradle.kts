@@ -1,9 +1,17 @@
+// common/build.gradle.kts
 plugins {
-    kotlin("jvm") // Ensure Kotlin plugin is applied
+    id("org.jetbrains.kotlin.jvm") // Version is inherited from root project
 }
 
 dependencies {
-    // Using 'api' so modules depending on 'common' also get this transitively
-    api("com.fasterxml.jackson.core:jackson-databind:2.15.3") // Use a recent, stable version
-    implementation(kotlin("stdlib-jdk8")) // Kotlin standard library
+    // Use platform BOM from the version catalog
+    implementation(platform(libs.pulsar.bom))
+
+    // Use jackson from the version catalog
+    api(libs.jackson.databind)
+
+    // kotlin("stdlib-jdk8") automatically uses the version from the Kotlin plugin.
+    // This is generally fine. If you had added kotlin-stdlib-jdk8 to your catalog,
+    // you could use implementation(libs.kotlin.stdlib.jdk8)
+    implementation(kotlin("stdlib-jdk8"))
 }

@@ -52,6 +52,7 @@ class InventoryUpdateTranslator : Function<String, String> {
      *         fails (e.g., malformed input, missing required fields) or if the input is null.
      */
     override fun process(input: String?, context: Context?): String? {
+
         if (context == null) {
             println("Error: Context is null.")
             return null

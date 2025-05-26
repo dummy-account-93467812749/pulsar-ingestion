@@ -1,48 +1,53 @@
 package com.example.pulsar.functions.transforms.translators
-
 import com.example.pulsar.common.CommonEvent
-import com.fasterxml.jackson.databind.JsonNode // Added import
+import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.apache.pulsar.client.api.*
 import org.apache.pulsar.common.functions.FunctionConfig
 import org.apache.pulsar.functions.LocalRunner
-import org.junit.jupiter.api.AfterEach
-import org.junit.jupiter.api.BeforeEach
-import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.*
 import org.junit.jupiter.api.Assertions.*
-import java.time.format.DateTimeParseException
-import java.util.Collections
-import java.util.UUID
+import org.testcontainers.containers.PulsarContainer
+import java.time.format.DateTimeFormatter
+import java.time.ZoneOffset
+import java.util.*
 import java.util.concurrent.TimeUnit
+    class TranslatorsIntegrationTest {
+    companion object {
+        private val isoFormatter = 
+            DateTimeFormatter.ISO_OFFSET_DATE_TIME.withZone(ZoneOffset.UTC)
 
-class TranslatorsIntegrationTest {
+        private fun epochSecondsToISO(epochSeconds: Long): String =
+            java.time.Instant.ofEpochSecond(epochSeconds)
+                .atOffset(ZoneOffset.UTC)
+                .format(isoFormatter)
+    }
 
-    private lateinit var sharedBrokerLocalRunner: LocalRunner // Renamed for clarity
+    private lateinit var pulsar: PulsarContainer
     private lateinit var client: PulsarClient
     private val objectMapper: ObjectMapper = jacksonObjectMapper()
 
-    private val inputTopicBase = "persistent://public/default/test-input-topic-"
+    private val inputTopicBase  = "persistent://public/default/test-input-topic-"
     private val outputTopicBase = "persistent://public/default/test-output-topic-"
     private val functionNameBase = "test-translator-function-"
 
     @BeforeEach
     fun setupSharedComponents() {
-        // This LocalRunner is just to host the broker for the client
-        sharedBrokerLocalRunner = LocalRunner.builder()
-            .brokerServiceUrl(null) // Use default in-memory broker
-            .build()
-        sharedBrokerLocalRunner.start(false) 
+        // start a real Pulsar broker + functions worker
+        pulsar = PulsarContainer("4.0.4")
+            .withFunctionsWorker()
+        pulsar.start()
 
         client = PulsarClient.builder()
-            .serviceUrl(sharedBrokerLocalRunner.getBrokerServiceURL()) // Trying getBrokerServiceURL()
+            .serviceUrl(pulsar.pulsarBrokerUrl)
             .build()
     }
 
     @AfterEach
     fun teardownSharedComponents() {
         client.close()
-        sharedBrokerLocalRunner.stop()
+        pulsar.stop()
     }
 
     private fun runTestForFunction(
@@ -56,7 +61,7 @@ class TranslatorsIntegrationTest {
         inputTimestampExtractor: (JsonNode) -> String,
         originalInputVerifier: (JsonNode, JsonNode) -> Unit
     ) {
-        val functionSpecificLocalRunner = LocalRunner.builder()
+        val functionRunner = LocalRunner.builder()
             .functionConfig(FunctionConfig().apply {
                 name = functionName
                 inputs = Collections.singletonList(inputTopicName)
@@ -65,163 +70,169 @@ class TranslatorsIntegrationTest {
                 className = functionClass.name
                 autoAck = true
             })
-            .brokerServiceUrl(sharedBrokerLocalRunner.getBrokerServiceURL()) // Trying getBrokerServiceURL()
+            .brokerServiceUrl(pulsar.pulsarBrokerUrl)
             .build()
-        
+
         try {
-            functionSpecificLocalRunner.start(false) // Start the function runner
+            functionRunner.start(false)
 
-            val producer = client.newProducer(Schema.STRING).topic(inputTopicName).create()
-            val consumer = client.newConsumer(Schema.STRING).topic(outputTopicName)
-                .subscriptionName("test-sub-${UUID.randomUUID()}").subscribe()
+            val producer: Producer<String> = client
+                .newProducer<String>(Schema.STRING)
+                .topic(inputTopicName)
+                .create()
 
+            val consumer: Consumer<String> = client
+                .newConsumer<String>(Schema.STRING)
+                .topic(outputTopicName)
+                .subscriptionName("test-sub-${UUID.randomUUID()}")
+                .subscribe()
+
+            // send & receive
             producer.send(sampleInput)
-            TranslatorsIntegrationTest.log.info("Sent message to {}: {}", inputTopicName, sampleInput)
-
-            val msg = consumer.receive(15, TimeUnit.SECONDS) 
+            val msg = consumer.receive(15, TimeUnit.SECONDS)
             assertNotNull(msg, "Did not receive message from $outputTopicName")
-
-            val outputJson = msg.value
-            TranslatorsIntegrationTest.log.info("Received message from {}: {}", outputTopicName, outputJson)
             consumer.acknowledge(msg)
 
-            val commonEvent = objectMapper.readValue(outputJson, CommonEvent::class.java)
+            // parse into your CommonEvent
+            val commonEvent = objectMapper.readValue(msg.value, CommonEvent::class.java)
 
-            assertEquals(expectedSource, commonEvent.source)
+            // basic assertions
+            assertEquals(expectedSource,    commonEvent.source)
             assertEquals(expectedEventType, commonEvent.eventType)
-            assertNotNull(commonEvent.eventId)
             assertTrue(commonEvent.eventId.isNotBlank())
-
-            try {
+            // timestamp is valid ISO‑8601
+            assertDoesNotThrow {
                 java.time.OffsetDateTime.parse(commonEvent.timestamp)
-            } catch (e: DateTimeParseException) {
-                fail("Timestamp is not in valid ISO 8601 format: ${commonEvent.timestamp}", e)
             }
-            
-            val originalInputJson = objectMapper.readTree(sampleInput)
-            val expectedTimestampFromInput = inputTimestampExtractor(originalInputJson)
-            assertEquals(expectedTimestampFromInput, commonEvent.timestamp, "Timestamp mismatch between input and CommonEvent")
 
-            originalInputVerifier(originalInputJson, commonEvent.data)
+            // timestamp matches input
+            val originalJson = objectMapper.readTree(sampleInput)
+            assertEquals(
+                inputTimestampExtractor(originalJson),
+                commonEvent.timestamp,
+                "Timestamp mismatch"
+            )
+
+            // delegate the rest of the assertions to the lambda
+            originalInputVerifier(originalJson, commonEvent.data)
 
             producer.close()
             consumer.close()
         } finally {
-            functionSpecificLocalRunner.stop()
+            functionRunner.stop()
         }
     }
-    
-    private val isoFormatter = java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME.withZone(java.time.ZoneOffset.UTC)
-    private fun epochSecondsToISO(epochSeconds: Long): String {
-        return java.time.Instant.ofEpochSecond(epochSeconds).atOffset(java.time.ZoneOffset.UTC).format(isoFormatter)
-    }
 
-    @Test
-    fun testUserProfileTranslator() {
-        val uid = 789
-        val name = "Test User"
-        val created = 1620000000L
-        val sampleInput = "{\"uid\": $uid, \"name\": \"$name\", \"created\": $created}" // Corrected
-        val topicSuffix = "userprofile-" + UUID.randomUUID().toString().substring(0,8)
+    @Test fun testUserProfileTranslator() {
+        val uid     = 789
+        val name    = "Test User"
+        val created = 1_620_000_000L
+        val sample  = """{"uid":$uid,"name":"$name","created":$created}"""
+        val suffix  = "userprofile-" + UUID.randomUUID().toString().take(8)
 
         runTestForFunction(
             UserProfileTranslator::class.java,
-            inputTopicBase + topicSuffix, outputTopicBase + topicSuffix, functionNameBase + topicSuffix,
-            sampleInput,
-            "user-service", "USER_PROFILE_EVENT",
-            inputTimestampExtractor = { epochSecondsToISO(it.get("created").asLong()) },
-            originalInputVerifier = { original, data ->
-                assertEquals(original.get("uid").asInt(), data.get("uid").asInt())
-                assertEquals(original.get("name").asText(), data.get("name").asText())
+            inputTopicBase + suffix,
+            outputTopicBase + suffix,
+            functionNameBase + suffix,
+            sample,
+            "user-service",
+            "USER_PROFILE_EVENT",
+            { epochSecondsToISO(it.get("created").asLong()) },
+            { orig, data ->
+                assertEquals(orig.get("uid").asInt(),   data.get("uid").asInt())
+                assertEquals(orig.get("name").asText(), data.get("name").asText())
             }
         )
     }
 
-    @Test
-    fun testOrderRecordTranslator() {
-        val orderId = "ORD-INT-001"
+    @Test fun testOrderRecordTranslator() {
+        val orderId  = "ORD-INT-001"
         val placedAt = "2024-01-15T11:30:00Z"
-        val sampleInput = "{\"orderId\": \"$orderId\", \"items\": [\"itemA\"], \"placedAt\": \"$placedAt\"}" // Corrected
-        val topicSuffix = "orderrecord-" + UUID.randomUUID().toString().substring(0,8)
+        val sample   = """{"orderId":"$orderId","items":["itemA"],"placedAt":"$placedAt"}"""
+        val suffix   = "orderrecord-" + UUID.randomUUID().toString().take(8)
 
         runTestForFunction(
             OrderRecordTranslator::class.java,
-            inputTopicBase + topicSuffix, outputTopicBase + topicSuffix, functionNameBase + topicSuffix,
-            sampleInput,
-            "order-service", "ORDER_EVENT",
-            inputTimestampExtractor = { it.get("placedAt").asText() },
-            originalInputVerifier = { original, data ->
-                assertEquals(original.get("orderId").asText(), data.get("orderId").asText())
-                assertEquals(original.get("items"), data.get("items"))
+            inputTopicBase + suffix,
+            outputTopicBase + suffix,
+            functionNameBase + suffix,
+            sample,
+            "order-service",
+            "ORDER_EVENT",
+            { it.get("placedAt").asText() },
+            { orig, data ->
+                assertEquals(orig.get("orderId").asText(), data.get("orderId").asText())
+                assertEquals(orig.get("items"),             data.get("items"))
             }
         )
     }
 
-    @Test
-    fun testInventoryUpdateTranslator() {
-        val sku = "SKU-INT-123"
-        val qty = 150
-        val updateTime = 1620050000L
-        val sampleInput = "{\"sku\": \"$sku\", \"qty\": $qty, \"updateTime\": $updateTime}" // Corrected
-        val topicSuffix = "inventoryupdate-" + UUID.randomUUID().toString().substring(0,8)
-        
+    @Test fun testInventoryUpdateTranslator() {
+        val sku        = "SKU-INT-123"
+        val qty        = 150
+        val updateTime = 1_620_050_000L
+        val sample     = """{"sku":"$sku","qty":$qty,"updateTime":$updateTime}"""
+        val suffix     = "inventoryupdate-" + UUID.randomUUID().toString().take(8)
+
         runTestForFunction(
             InventoryUpdateTranslator::class.java,
-            inputTopicBase + topicSuffix, outputTopicBase + topicSuffix, functionNameBase + topicSuffix,
-            sampleInput,
-            "inventory-service", "INVENTORY_EVENT",
-            inputTimestampExtractor = { epochSecondsToISO(it.get("updateTime").asLong()) },
-            originalInputVerifier = { original, data ->
-                assertEquals(original.get("sku").asText(), data.get("sku").asText())
-                assertEquals(original.get("qty").asInt(), data.get("qty").asInt())
+            inputTopicBase + suffix,
+            outputTopicBase + suffix,
+            functionNameBase + suffix,
+            sample,
+            "inventory-service",
+            "INVENTORY_EVENT",
+            { epochSecondsToISO(it.get("updateTime").asLong()) },
+            { orig, data ->
+                assertEquals(orig.get("sku").asText(), data.get("sku").asText())
+                assertEquals(orig.get("qty").asInt(),  data.get("qty").asInt())
             }
         )
     }
 
-    @Test
-    fun testPaymentNoticeTranslator() {
-        val txnId = "TXN-INT-002"
-        val time = "2024-01-15T12:00:00Z"
-        val sampleInput = "{\"txnId\": \"$txnId\", \"amount\": 19.99, \"currency\": \"EUR\", \"time\": \"$time\"}" // Corrected
-        val topicSuffix = "paymentnotice-" + UUID.randomUUID().toString().substring(0,8)
+    @Test fun testPaymentNoticeTranslator() {
+        val txnId    = "TXN-INT-002"
+        val time     = "2024-01-15T12:00:00Z"
+        val sample   = """{"txnId":"$txnId","amount":19.99,"currency":"EUR","time":"$time"}"""
+        val suffix   = "paymentnotice-" + UUID.randomUUID().toString().take(8)
 
         runTestForFunction(
             PaymentNoticeTranslator::class.java,
-            inputTopicBase + topicSuffix, outputTopicBase + topicSuffix, functionNameBase + topicSuffix,
-            sampleInput,
-            "payment-gateway", "PAYMENT_EVENT",
-            inputTimestampExtractor = { it.get("time").asText() },
-            originalInputVerifier = { original, data ->
-                assertEquals(original.get("txnId").asText(), data.get("txnId").asText())
-                assertEquals(original.get("amount").asDouble(), data.get("amount").asDouble())
+            inputTopicBase + suffix,
+            outputTopicBase + suffix,
+            functionNameBase + suffix,
+            sample,
+            "payment-gateway",
+            "PAYMENT_EVENT",
+            { it.get("time").asText() },
+            { orig, data ->
+                assertEquals(orig.get("txnId").asText(),  data.get("txnId").asText())
+                assertEquals(orig.get("amount").asDouble(), data.get("amount").asDouble())
             }
         )
     }
 
-    @Test
-    fun testShipmentStatusTranslator() {
-        val shipId = "SHIP-INT-321"
-        val status = "SHIPPED"
-        val deliveredAt = 1620100000L
-        val sampleInput = "{\"shipId\": \"$shipId\", \"status\": \"$status\", \"deliveredAt\": $deliveredAt}" // Corrected
-        val topicSuffix = "shipmentstatus-" + UUID.randomUUID().toString().substring(0,8)
+    @Test fun testShipmentStatusTranslator() {
+        val shipId      = "SHIP-INT-321"
+        val status      = "SHIPPED"
+        val deliveredAt = 1_620_100_000L
+        val sample      = """{"shipId":"$shipId","status":"$status","deliveredAt":$deliveredAt}"""
+        val suffix      = "shipmentstatus-" + UUID.randomUUID().toString().take(8)
 
         runTestForFunction(
             ShipmentStatusTranslator::class.java,
-            inputTopicBase + topicSuffix, outputTopicBase + topicSuffix, functionNameBase + topicSuffix,
-            sampleInput,
-            "shipping-service", "SHIPMENT_EVENT",
-            inputTimestampExtractor = { epochSecondsToISO(it.get("deliveredAt").asLong()) },
-            originalInputVerifier = { original, data ->
-                assertEquals(original.get("shipId").asText(), data.get("shipId").asText())
-                assertEquals(original.get("status").asText(), data.get("status").asText())
+            inputTopicBase + suffix,
+            outputTopicBase + suffix,
+            functionNameBase + suffix,
+            sample,
+            "shipping-service",
+            "SHIPMENT_EVENT",
+            { epochSecondsToISO(it.get("deliveredAt").asLong()) },
+            { orig, data ->
+                assertEquals(orig.get("shipId").asText(), data.get("shipId").asText())
+                assertEquals(orig.get("status").asText(), data.get("status").asText())
             }
         )
-    }
-    
-    companion object {
-        // Ensure JsonNode is imported if not already
-        // import com.fasterxml.jackson.databind.JsonNode 
-        private val log = org.slf4j.LoggerFactory.getLogger(TranslatorsIntegrationTest::class.java)
     }
 }

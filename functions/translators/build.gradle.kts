@@ -1,33 +1,77 @@
+// functions/translators/build.gradle.kts
+
 plugins {
+    // These are fine because their versions are managed by the root project's plugins block
     id("org.jetbrains.kotlin.jvm")
-    id("org.jetbrains.kotlin.plugin.serialization") version "1.9.20"
+    id("com.github.johnrengelman.shadow")
+    id("com.google.cloud.tools.jib")
 }
 
 dependencies {
-    implementation(project(":common")) // For CommonEvent
-    implementation("org.apache.pulsar:pulsar-client:4.0.0")
-    implementation("org.apache.pulsar:pulsar-functions-api:4.0.0")
-    // For Kotlin stdlib, if not brought by "kotlin.jvm" plugin or other dependencies transitively
-    implementation(kotlin("stdlib-jdk8"))
+    // Use the BOM from the version catalog
+    implementation(platform(libs.pulsar.bom))
+    implementation("org.apache.pulsar:pulsar-functions-api") // You could also add this to libs.versions.toml
+    implementation(project(":common"))
+    implementation(libs.jackson.module.kotlin)    // <-- this brings in com.fasterxml.jackson.module.kotlin
+    implementation("org.apache.pulsar:pulsar-functions-api:${libs.versions.pulsar.get()}")
 
-    // Jackson for JSON processing
-    implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.15.2")
 
-    // Kotlinx Serialization for JSON processing
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0")
-
-    testImplementation("org.apache.pulsar:pulsar-functions-local-runner:4.0.0")
-    // JUnit BOM is in the root build.gradle.kts, so direct dependencies are fine
-    testImplementation("org.junit.jupiter:junit-jupiter")
-    testImplementation("io.mockk:mockk:1.13.10") // Updated version
+    testImplementation(project(":test-kit"))
+    testImplementation(libs.jackson.module.kotlin)
 }
 
-tasks.withType<Test> {
-    useJUnitPlatform()
+
+
+// In root build.gradle.kts -> subprojects { ... }
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_23) // Or JVM_21, JVM_22
+    }
 }
 
-tasks.named<Test>("test") {
-    enabled = false
+/* -------------- integration-test source set -------------- */
+val integrationTest by sourceSets.creating {
+    // It's good practice to configure it directly
+}
+configurations {
+    val integrationTestImplementation by getting {
+        extendsFrom(configurations.testImplementation.get())
+    }
+    // If you need compileOnly or runtimeOnly for integrationTest, define them similarly
+    // val integrationTestCompileOnly by getting { ... }
+    // val integrationTestRuntimeOnly by getting { ... }
 }
 
-sourceSets.test.get().kotlin.exclude("**/TranslatorsIntegrationTest.kt")
+
+tasks.register<Test>("integrationTest") {
+    description = "Spin Testcontainers Pulsar and run E2E tests."
+    group = "verification"
+    testClassesDirs = integrationTest.output.classesDirs
+    classpath = integrationTest.runtimeClasspath
+    shouldRunAfter(tasks.test)
+    useJUnitPlatform() // Add this if your integration tests also use JUnit Platform
+}
+
+/* -------------- fat-JAR --------------- */
+tasks.shadowJar {
+    archiveClassifier.set("")                          // e.g., translators.jar
+    // Consider making the Main-Class configurable or derived if you have multiple functions per module
+    manifest { attributes["Main-Class"] = "com.acme.pipeline.functions.SplitterFunction" }
+}
+
+tasks.register<Zip>("makeNar") {
+    dependsOn(tasks.shadowJar)
+    archiveFileName.set("${project.name}-${project.version}.nar") // This is fine
+    from(zipTree(tasks.shadowJar.get().archiveFile)) {
+        // Optional: exclude unnecessary files from the NAR if shadowJar includes too much
+        // exclude("META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA")
+    }
+}
+
+/* -------------- container image -------------- */
+jib {
+    from.image = "eclipse-temurin:21-jre"
+    to.image   = "ghcr.io/acme/${project.name}:${project.version}"
+    container.entrypoint = listOf()                    // Function Mesh handles cmd
+    // Consider setting container.appRoot or other jib configurations
+}
