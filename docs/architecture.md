@@ -18,7 +18,7 @@ The system primarily consists of:
 
 ## Source Connectors
 
-This section details the source connectors developed for ingesting data from different systems. Connectors have been refactored to a new standard configuration schema, detailed in the main project `README.md`. Each connector resides in its own directory under `connectors/<connector-id>/` and includes a `connector.yaml` for Pulsar integration and a `config.sample.yml` for connector-specific settings.
+This section details the source connectors developed for ingesting data from different systems. Connectors have been refactored to a new standard configuration schema, detailed in the main project `README.md`. Each connector resides in its own directory under `connectors/<connector-id>/` and includes a `connector.yaml` for Pulsar integration and one or more connector-specific configuration files (e.g., `config.dev.yml`). These individual connector definitions are discovered and processed by the central `./gradlew generateManifests` task to produce deployment artifacts.
 
 ### 1. HTTP Connector
 

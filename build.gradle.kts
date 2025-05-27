@@ -5,6 +5,8 @@ import org.gradle.api.tasks.SourceSet
 import org.gradle.testing.jacoco.plugins.JacocoTaskExtension
 import org.gradle.api.execution.TaskExecutionGraph // Import for TaskExecutionGraph
 import org.gradle.kotlin.dsl.closureOf            // Import for closureOf
+import groovy.yaml.YamlSlurper // Import for YAML parsing
+import groovy.yaml.YamlBuilder // Import for YAML building
 
 plugins {
     alias(libs.plugins.kotlin.jvm) apply false
@@ -146,44 +148,176 @@ tasks.register<JacocoReport>("coverageReport") {
 
 tasks.register("generateManifests") {
     group = "generation"
-    description = "Generates functionmesh-pipeline.yaml using Helm with absolute chart path from project root."
-
-    val buildLayout = project.layout
-    val deployDirProperty = buildLayout.buildDirectory.dir("deploy")
-    val chartDirFile = project.file("deployment/helm")
-    val valuesFile = project.file("deployment/pipeline.yaml")
-
-    val functionMeshOutputProperty = deployDirProperty.get().file("functionmesh-pipeline.yaml")
-    outputs.file(functionMeshOutputProperty)
-
-    doFirst {
-        deployDirProperty.get().asFile.mkdirs()
-    }
+    description = "Gathers pipeline data, prepares Helm values, and will eventually generate manifests."
 
     doLast {
-        // println("--- Attempting to Generate functionmesh-pipeline.yaml ---") // Removed for cleaner output
-        project.exec {
-            executable("helm")
-            args(
-                "template",
-                "my-test-release",
-                chartDirFile.absolutePath,
-                "--show-only", "templates/mesh/function-mesh.yaml",
-                "--values", valuesFile.absolutePath
-            )
-            standardOutput = functionMeshOutputProperty.asFile.outputStream()
-            isIgnoreExitValue = false
+        val yamlSlurper = YamlSlurper()
+        val pipelineData = mutableMapOf<String, Any>(
+            "functions" to mutableMapOf<String, Any>(),
+            "connectors" to mutableListOf<Map<String, Any>>()
+        )
+        var tenant = "default-tenant" // Default value
+        var namespace = "default-namespace" // Default value
+
+        // Parse deployment/pipeline.yaml for Functions and global values
+        val pipelineFile = project.file("deployment/pipeline.yaml")
+        if (pipelineFile.exists()) {
+            val pipelineConfig = yamlSlurper.parseText(pipelineFile.readText()) as Map<String, Any>
+            (pipelineData["functions"] as MutableMap<String, Any>).putAll(pipelineConfig["functions"] as Map<String, Any>? ?: emptyMap())
+            tenant = pipelineConfig["tenant"] as String? ?: tenant
+            namespace = pipelineConfig["namespace"] as String? ?: namespace
+        } else {
+            logger.warn("deployment/pipeline.yaml not found. Using default tenant and namespace.")
         }
 
-        val generatedFile = functionMeshOutputProperty.asFile
-        // if (generatedFile.exists() && generatedFile.length() > 0) { // Removed for cleaner output
-        //     println("--- functionmesh-pipeline.yaml was generated successfully. ---")
-        // } else if (generatedFile.exists()) {
-        //     println("--- functionmesh-pipeline.yaml was generated but is empty. ---")
-        // } else {
-        //     println("--- functionmesh-pipeline.yaml was NOT generated. ---")
-        // }
-        // println("--- generateManifests task finished ---") // Removed for cleaner output
+        // Discover and Parse Connectors
+        val connectorsDir = project.file("connectors")
+        if (connectorsDir.isDirectory) {
+            connectorsDir.listFiles()?.forEach { connectorDir ->
+                if (connectorDir.isDirectory) {
+                    val connectorName = connectorDir.name
+                    val connectorYamlFile = project.file("${connectorDir.path}/connector.yaml")
+                    if (connectorYamlFile.exists()) {
+                        try {
+                            val connectorConfig = yamlSlurper.parseText(connectorYamlFile.readText()) as Map<String, Any>
+                            val configFileName = connectorConfig["configFile"] as String?
+                            var specificConfig: Map<String, Any>? = null
+                            if (configFileName != null) {
+                                val specificConfigFile = project.file("${connectorDir.path}/${configFileName}")
+                                if (specificConfigFile.exists()) {
+                                    specificConfig = yamlSlurper.parseText(specificConfigFile.readText()) as Map<String, Any>
+                                } else {
+                                    logger.warn("Connector config file ${specificConfigFile.path} not found for connector ${connectorName}.")
+                                }
+                            }
+
+                            val isCustom = project.file("${connectorDir.path}/build.gradle.kts").exists() &&
+                                           project.file("${connectorDir.path}/src").isDirectory
+
+                            val connectorEntry = mutableMapOf<String, Any>(
+                                "name" to connectorName,
+                                "type" to (connectorConfig["type"] ?: "unknown"),
+                                "image" to (connectorConfig["image"] ?: "unknown"),
+                                "topic" to (connectorConfig["topic"] ?: "unknown"), // Assuming topic might be in connector.yaml
+                                "config" to (specificConfig ?: emptyMap<String, Any>()),
+                                "isCustom" to isCustom
+                            )
+                            // Add any other details from connectorConfig directly
+                            connectorConfig.forEach { key, value ->
+                                if (!connectorEntry.containsKey(key)) {
+                                    connectorEntry[key] = value
+                                }
+                            }
+
+                            (pipelineData["connectors"] as MutableList<Map<String, Any>>).add(connectorEntry)
+                        } catch (e: Exception) {
+                            logger.error("Error parsing connector.yaml for ${connectorName}: ${e.message}")
+                        }
+                    } else {
+                        logger.warn("connector.yaml not found in ${connectorDir.path}")
+                    }
+                }
+            }
+        } else {
+            logger.warn("Connectors directory 'connectors/' not found.")
+        }
+
+        // Output for verification
+        val functionsMap = pipelineData["functions"] as Map<String, Any>
+        val connectorsList = pipelineData["connectors"] as List<Map<String, Any>>
+        println("Found ${functionsMap.size} functions: ${functionsMap.keys}")
+        println("Found ${connectorsList.size} connectors: ${connectorsList.map { it["name"] }}")
+
+        // Prepare helmValues
+        val helmValues = mutableMapOf<String, Any>(
+            "tenant" to tenant,
+            "namespace" to namespace,
+            "functions" to functionsMap,
+            "connectors" to mutableMapOf<String, Any>()
+        )
+
+        connectorsList.forEach { connector ->
+            val connectorName = connector["name"] as String
+            // Create a mutable copy to avoid modifying the original pipelineData connector entries if needed elsewhere
+            val connectorDetails = connector.toMutableMap()
+            // The 'name' key is redundant when the connector name is the key in the map.
+            // However, Helm charts might expect it, so let's keep it for now or make it configurable.
+            // connectorDetails.remove("name")
+            (helmValues["connectors"] as MutableMap<String, Any>)[connectorName] = connectorDetails
+        }
+
+        // Write helmValues to YAML file
+        val helmValuesFile = project.file("${project.buildDir}/tmp/helm_values.yaml")
+        helmValuesFile.parentFile.mkdirs() // Ensure directory exists
+        helmValuesFile.text = YamlBuilder().build(helmValues)
+        println("Helm values written to ${helmValuesFile.absolutePath}")
+        // println("Helm values content:\n${helmValuesFile.readText()}") // Uncomment for debugging
+
+        // Ensure build/deploy directory exists
+        val deployDir = project.file("${project.buildDir}/deploy")
+        deployDir.mkdirs()
+
+        // Execute Helm to generate FunctionMesh manifest
+        val functionMeshOutputFile = project.file("${deployDir.path}/functionmesh-pipeline.yaml")
+        project.exec {
+            executable = "helm"
+            args = listOf(
+                "template",
+                "my-fm-release", // Release name for templating
+                project.file("deployment/helm").absolutePath,
+                "--values",
+                helmValuesFile.absolutePath,
+                "--show-only",
+                "templates/mesh/function-mesh.yaml"
+            )
+            standardOutput = functionMeshOutputFile.newOutputStream()
+            isIgnoreExitValue = false
+        }
+        println("FunctionMesh manifest generated at ${functionMeshOutputFile.absolutePath}")
+
+        // Execute Helm to generate Worker pipeline manifest
+        val workerPipelineOutputFile = project.file("${deployDir.path}/worker-pipeline.yaml")
+        project.exec {
+            executable = "helm"
+            args = listOf(
+                "template",
+                "my-worker-release", // Release name for templating
+                project.file("deployment/helm").absolutePath,
+                "--values",
+                helmValuesFile.absolutePath,
+                "--show-only",
+                "templates/worker/registration-job.yaml"
+            )
+            standardOutput = workerPipelineOutputFile.newOutputStream()
+            isIgnoreExitValue = false
+        }
+        println("Worker pipeline manifest generated at ${workerPipelineOutputFile.absolutePath}")
+
+        // Ensure deployment/local-dev directory exists
+        val localDevDir = project.file("deployment/local-dev")
+        localDevDir.mkdirs()
+        val bootstrapScriptFile = project.file("${localDevDir.path}/bootstrap.sh")
+
+        // Execute Helm to generate bootstrap.sh
+        project.exec {
+            executable = "helm"
+            args = listOf(
+                "template",
+                "my-bootstrap-release",
+                project.file("deployment/helm").absolutePath,
+                "--values",
+                helmValuesFile.absolutePath,
+                "--show-only",
+                "templates/compose/bootstrap.sh.tpl"
+            )
+            standardOutput = bootstrapScriptFile.newOutputStream()
+            isIgnoreExitValue = false
+        }
+        // Make bootstrap.sh executable
+        bootstrapScriptFile.setExecutable(true, false) // true for owner executable, false for all users
+        println("Bootstrap script generated at ${bootstrapScriptFile.absolutePath} and made executable.")
+
+        println("--- generateManifests task finished ---")
     }
 }
 
