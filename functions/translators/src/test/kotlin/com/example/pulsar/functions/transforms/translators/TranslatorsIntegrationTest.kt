@@ -13,8 +13,96 @@ import java.time.format.DateTimeFormatter
 import java.time.ZoneOffset
 import java.util.*
 import java.util.concurrent.TimeUnit
+
+import java.io.File
+import java.lang.reflect.Modifier
+
     class TranslatorsIntegrationTest {
     companion object {
+
+        @BeforeAll
+        @JvmStatic
+        fun dumpClasspathDiagnostics() {
+            println("==== Classpath Diagnostics ====")
+
+            // 1) Where is Pulsar’s ObjectMapperFactory actually coming from?
+            val omfCls = org.apache.pulsar.common.util.ObjectMapperFactory::class.java
+            println("ObjectMapperFactory loaded from: " +
+                omfCls.protectionDomain.codeSource.location)
+
+            // 2) Does that class really have a create() method?
+            try {
+                val m = omfCls.getDeclaredMethod("create")
+                println("✓ Found create(): $m")
+            } catch (e: NoSuchMethodException) {
+                println("✘ No create() on ObjectMapperFactory!")
+            }
+
+            // 3) What jackson-databind version is on the classpath?
+            val pkg = com.fasterxml.jackson.databind.ObjectMapper::class.java.`package`
+            println("Jackson-databind implementationVersion: ${pkg.implementationVersion}")
+
+            println("==== End Diagnostics ====")
+        }
+
+        @BeforeAll
+        @JvmStatic
+        fun dumpEverythingDiagnostics() {
+            println("==== BEGIN FULL DIAGNOSTICS ====")
+
+            // 1) Dump the entire classpath as a List<String>
+            println("-- classpath entries --")
+            val cpList: List<String> = (Thread.currentThread().contextClassLoader as? java.net.URLClassLoader)
+                // map each URL to its string form
+                ?.urLs
+                ?.map { it.toString() }
+                // fallback to the system classpath if not a URLClassLoader
+                ?: System.getProperty("java.class.path")
+                    .split(File.pathSeparator)
+
+            cpList.forEach { println(it) }
+
+            // helper to dump class source + methods
+            fun dumpClassInfo(cls: Class<*>) {
+                val loc = cls.protectionDomain.codeSource?.location
+                println(">> ${cls.name} loaded from: $loc")
+                println("   Methods:")
+                cls.declaredMethods
+                    .sortedBy { it.name }
+                    .forEach { m ->
+                        val mods = Modifier.toString(m.modifiers)
+                        val params = m.parameterTypes.joinToString { it.simpleName }
+                        println("     • $mods ${m.returnType.simpleName} ${m.name}($params)")
+                    }
+            }
+
+            // 2) Inspect Pulsar’s ObjectMapperFactory
+            println("-- ObjectMapperFactory info --")
+            val omfCls = org.apache.pulsar.common.util.ObjectMapperFactory::class.java
+            dumpClassInfo(omfCls)
+
+            // 3) Inspect both shaded & unshaded ObjectMapper
+            println("-- Jackson classes --")
+            listOf(
+                "org.apache.pulsar.shade.com.fasterxml.jackson.databind.ObjectMapper",
+                "com.fasterxml.jackson.databind.ObjectMapper"
+            ).forEach { fqcn ->
+                try {
+                    dumpClassInfo(Class.forName(fqcn))
+                } catch (_: ClassNotFoundException) {
+                    println("   $fqcn NOT on classpath")
+                }
+            }
+
+            // 4) Jackson package version
+            println("-- Jackson-databind Package Info --")
+            val pkg = com.fasterxml.jackson.databind.ObjectMapper::class.java.`package`
+            println("   implVersion = ${pkg.implementationVersion}")
+            println("   specVersion = ${pkg.specificationVersion}")
+
+            println("==== END FULL DIAGNOSTICS ====")
+        }
+
         private val isoFormatter = 
             DateTimeFormatter.ISO_OFFSET_DATE_TIME.withZone(ZoneOffset.UTC)
 
@@ -35,7 +123,7 @@ import java.util.concurrent.TimeUnit
     @BeforeEach
     fun setupSharedComponents() {
         // start a real Pulsar broker + functions worker
-        pulsar = PulsarContainer("4.0.4")
+        pulsar = PulsarContainer("4.0.5")
             .withFunctionsWorker()
         pulsar.start()
 

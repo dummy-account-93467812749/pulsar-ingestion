@@ -1,74 +1,32 @@
 // functions/translators/build.gradle.kts
 
 plugins {
-    // id("org.jetbrains.kotlin.jvm") // Applied by root project's subprojects block
-    id("com.github.johnrengelman.shadow") // Keep version here or manage in root pluginManagement
-    id("com.google.cloud.tools.jib")     // Keep version here or manage in root pluginManagement
+    id("com.github.johnrengelman.shadow")
+    id("com.google.cloud.tools.jib")
 }
-
-// The 'integrationTest' sourceSet, 'integrationTestImplementation' configuration,
-// and the 'integrationTest' Test task are now defined and registered by the
-// root project's 'subprojects { ... }' block.
-// So, you REMOVE the following sections from this file:
-//
-// REMOVE:
-// /* -------------- integration-test source set -------------- */
-// val integrationTest by sourceSets.creating {
-//     // It's good practice to configure it directly
-// }
-// configurations {
-//     val integrationTestImplementation by getting {
-//         extendsFrom(configurations.testImplementation.get())
-//     }
-//     // If you need compileOnly or runtimeOnly for integrationTest, define them similarly
-//     // val integrationTestCompileOnly by getting { ... }
-//     // val integrationTestRuntimeOnly by getting { ... }
-// }
-//
-// REMOVE:
-// tasks.register<Test>("integrationTest") {
-//     description = "Spin Testcontainers Pulsar and run E2E tests."
-//     group = "verification"
-//     testClassesDirs = integrationTest.output.classesDirs
-//     classpath = integrationTest.runtimeClasspath
-//     shouldRunAfter(tasks.test)
-//     useJUnitPlatform() // Add this if your integration tests also use JUnit Platform
-// }
-//
-// REMOVE: (This was incorrectly placed here, it belongs in root or not at all if root handles it)
-// // In root build.gradle.kts -> subprojects { ... }
-// tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
-//     compilerOptions {
-//         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_23) // Or JVM_21, JVM_22
-//     }
-// }
-
 
 dependencies {
-    // Use the BOM from the version catalog
-    implementation(platform(libs.pulsar.bom))
-    // Pick ONE of these for pulsar-functions-api:
-    implementation("org.apache.pulsar:pulsar-functions-api") // If BOM manages it or you want default version from BOM
-    // implementation("org.apache.pulsar:pulsar-functions-api:${libs.versions.pulsar.get()}") // If you need a specific version NOT in BOM
+  implementation(platform(libs.pulsar.bom))
+  // testImplementation(platform(libs.pulsar.bom)) // This is fine, but often redundant if already declared without config scope
 
-    implementation(project(":common"))
-    implementation(libs.jackson.module.kotlin) // This brings in com.fasterxml.jackson.module.kotlin
+  implementation("org.apache.pulsar:pulsar-functions-api")
 
+  // ⚠️ ONLY pull in the ORIGINAL (un-shaded) runner
+  implementation("org.apache.pulsar:pulsar-functions-local-runner-original")
 
-    testImplementation(project(":test-kit"))
-    testImplementation(libs.jackson.module.kotlin) // Fine if test-kit doesn't already provide it via 'api'
+  // your code
+  implementation(project(":common"))
+  // let Pulsar BOM manage the non-shaded Jackson
+  implementation("com.fasterxml.jackson.core:jackson-databind")
+  implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
 
-    // If this module HAS integration tests, add their dependencies here:
-    // integrationTestImplementation(project(":test-kit"))
-    // integrationTestImplementation(libs.testcontainers.pulsar) // Example
-    // integrationTestImplementation(libs.pulsar.functions.local.runner) // Example
-}
-
-/* -------------- fat-JAR --------------- */
-tasks.shadowJar {
-    archiveClassifier.set("")                          // e.g., translators.jar
-    // !!! IMPORTANT: Update this to the correct Main-Class for your translator function !!!
-    manifest { attributes["Main-Class"] = "com.acme.pipeline.functions.YourTranslatorFunction" }
+  testImplementation(project(":test-kit"))
+  testImplementation(libs.testcontainers.pulsar) {
+      exclude(group = "org.apache.pulsar", module = "pulsar-client-admin") // <-- CORRECTED SYNTAX
+  }
+  // Explicitly add the -original version to the test classpath.
+  // The version will be managed by the pulsar.bom.
+  testImplementation("org.apache.pulsar:pulsar-client-admin-original")
 }
 
 tasks.register<Zip>("makeNar") {

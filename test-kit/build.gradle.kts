@@ -1,5 +1,7 @@
 // test-kit/build.gradle.kts
 
+// test-kit/build.gradle.kts
+
 plugins {
     id("org.jetbrains.kotlin.jvm")
 }
@@ -26,7 +28,8 @@ dependencies {
 
     // Pulsar client (if your tests need to produce/consume)
     api(libs.pulsar.client)
-    api(libs.pulsar.client.admin) // <--- ADD THIS LINE
+    // api(libs.pulsar.client.admin) // <--- COMMENT OUT or REMOVE THIS LINE
+    api(libs.pulsar.client.admin.original) // <--- ADD THIS LINE
 
     // Optional: Mockito-Kotlin if you still need it
     api(libs.mockito.kotlin)
