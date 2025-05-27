@@ -26,5 +26,5 @@ data class CommonEvent(
     val source: String,
     val eventType: String,
     val timestamp: String, // ISO 8601 format, typically UTC
-    val data: JsonNode
+    val data: JsonNode,
 )

@@ -52,7 +52,6 @@ class InventoryUpdateTranslator : Function<String, String> {
      *         fails (e.g., malformed input, missing required fields) or if the input is null.
      */
     override fun process(input: String?, context: Context?): String? {
-
         if (context == null) {
             println("Error: Context is null.")
             return null
@@ -70,7 +69,6 @@ class InventoryUpdateTranslator : Function<String, String> {
             val inputJson = objectMapper.readTree(input)
 
             if (!inputJson.has("sku") || !inputJson.has("updateTime")) {
-                
                 log.error("Missing required fields 'sku' or 'updateTime' in InventoryUpdate input: {}", input)
                 return null
             }
@@ -89,13 +87,12 @@ class InventoryUpdateTranslator : Function<String, String> {
                 source = source,
                 eventType = eventType,
                 timestamp = timestamp,
-                data = dataPayload
+                data = dataPayload,
             )
 
             val outputJson = objectMapper.writeValueAsString(commonEvent)
             log.info("Successfully transformed InventoryUpdate (sku: {}) to CommonEvent (eventId: {})", sku, eventId)
             return outputJson
-
         } catch (e: Exception) {
             log.error("Failed to process InventoryUpdate input: {}. Error: {}", input, e.message, e)
             return null

@@ -2,14 +2,21 @@ package com.example.pulsar.functions.routing
 
 import com.example.pulsar.common.CommonEvent
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
-import org.apache.pulsar.client.api.MessageBuilder // Not strictly needed for these tests but good for context
 import org.apache.pulsar.client.api.TypedMessageBuilder
 import org.apache.pulsar.functions.api.Context
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
-import org.mockito.kotlin.*
+import org.mockito.kotlin.any
+import org.mockito.kotlin.anyOrNull
+import org.mockito.kotlin.contains
+import org.mockito.kotlin.eq
+import org.mockito.kotlin.mock
+import org.mockito.kotlin.never
+import org.mockito.kotlin.verify
+import org.mockito.kotlin.whenever
 import org.slf4j.Logger
 import java.util.UUID
+import kotlin.test.assertNull
 
 class EventTypeSplitterTest {
 
@@ -33,7 +40,7 @@ class EventTypeSplitterTest {
         // The actual function call in EventTypeSplitter is context.newOutputMessage(targetTopic, byte[])
         // so we need to match against (String, ByteArray)
         whenever(mockContext.newOutputMessage(any<String>(), any<ByteArray>())).thenReturn(mockTypedMessageBuilder)
-        
+
         // The EventTypeSplitter directly calls sendAsync on the result of newOutputMessage,
         // it does not use .value() for byte array payloads.
         // So, no need to mock mockTypedMessageBuilder.value(any()) for these tests.
@@ -46,7 +53,7 @@ class EventTypeSplitterTest {
             source = "test-source",
             eventType = eventType,
             timestamp = "2023-01-01T00:00:00Z",
-            data = objectMapper.readTree(data)
+            data = objectMapper.readTree(data),
         )
         return objectMapper.writeValueAsString(event)
     }
@@ -56,7 +63,7 @@ class EventTypeSplitterTest {
         val eventType = "TEST_EVENT"
         val inputJson = createCommonEventJson(eventType)
         // Sanitization for "TEST_EVENT" -> "test_event" (lowercase)
-        val expectedTopic = "persistent://public/default/fn-split-test_event" 
+        val expectedTopic = "persistent://public/default/fn-split-test_event"
 
         splitter.process(inputJson, mockContext)
 
@@ -72,7 +79,7 @@ class EventTypeSplitterTest {
         val eventType = "User Profile Update"
         val inputJson = createCommonEventJson(eventType)
         // Sanitization: lowercase, spaces to hyphens
-        val expectedTopic = "persistent://public/default/fn-split-user-profile-update" 
+        val expectedTopic = "persistent://public/default/fn-split-user-profile-update"
 
         splitter.process(inputJson, mockContext)
 
@@ -80,7 +87,7 @@ class EventTypeSplitterTest {
         verify(mockTypedMessageBuilder).sendAsync()
         verify(mockLogger).info(contains("Routed eventId:"), contains(eventType), contains(expectedTopic))
     }
-    
+
     @Test
     fun `process event with complex eventType needing sanitization`() {
         val eventType = "ORDER_CREATED!@#V2"
@@ -115,14 +122,14 @@ class EventTypeSplitterTest {
         verify(mockContext, never()).newOutputMessage(any<String>(), any<ByteArray>())
         verify(mockTypedMessageBuilder, never()).sendAsync()
     }
-    
+
     @Test
     fun `process with null context logs error and returns null`() {
         // The implementation uses println for this specific scenario before logger is set.
         // We primarily test that it returns null and doesn't throw an NPE.
         val result = splitter.process(createCommonEventJson("ANY_EVENT"), null)
         kotlin.test.assertNull(result, "Function should return null when context is null")
-        
+
         // We cannot verify mockLogger interactions as it would not be initialized.
         // Verifying println output is outside typical Mockito/JUnit scope without extra setup.
     }
@@ -133,11 +140,11 @@ class EventTypeSplitterTest {
         val inputJson = createCommonEventJson(eventType)
         val expectedTopic = "persistent://public/default/fn-split-fail_send_event"
         val exceptionMessage = "Pulsar client failed to send"
-        
+
         whenever(mockTypedMessageBuilder.sendAsync()).thenThrow(RuntimeException(exceptionMessage))
 
         splitter.process(inputJson, mockContext)
-        
+
         verify(mockContext).newOutputMessage(eq(expectedTopic), eq(inputJson.toByteArray()))
         verify(mockTypedMessageBuilder).sendAsync()
         verify(mockLogger).error(
@@ -146,8 +153,8 @@ class EventTypeSplitterTest {
             // For now, checking for key parts of the log message:
             contains(eventType),
             contains(expectedTopic),
-            contains(exceptionMessage), 
-            anyOrNull() // For the throwable itself
+            contains(exceptionMessage),
+            anyOrNull(), // For the throwable itself
         )
     }
 }

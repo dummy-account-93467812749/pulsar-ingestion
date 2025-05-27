@@ -2,9 +2,14 @@ package com.example.pulsar.functions.transforms.translators
 
 import com.example.pulsar.common.CommonEvent
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
-import io.mockk.*
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.verify
 import org.apache.pulsar.functions.api.Context
-import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.slf4j.Logger
@@ -33,7 +38,7 @@ class UserProfileTranslatorTest {
         val uid = 123
         val name = "Alice"
         val createdEpoch = 1620000000L
-        
+
         val inputJsonString = "{" +
             "\"uid\": " + uid + "," +
             "\"name\": \"" + name + "\"," +
@@ -56,7 +61,7 @@ class UserProfileTranslatorTest {
         assertEquals(uid, dataNode.get("uid").asInt())
         assertEquals(name, dataNode.get("name").asText())
         assertEquals(createdEpoch, dataNode.get("created").asLong())
-        
+
         // Less strict: Check that info is logged with any message format,
         // an argument equal to uid.toString(), and any other string argument (for eventId).
         verify { mockLogger.info(any<String>(), eq(uid.toString()), any<String>()) }
@@ -67,7 +72,7 @@ class UserProfileTranslatorTest {
         val uid = "user-abc-123"
         val name = "Bob"
         val createdEpoch = 1620000000L
-        
+
         val inputJsonString = "{" +
             "\"uid\": \"" + uid + "\"," + // uid as string
             "\"name\": \"" + name + "\"," +
@@ -83,7 +88,7 @@ class UserProfileTranslatorTest {
         // an argument equal to uid (which is a string), and any other string argument (for eventId).
         verify { mockLogger.info(any<String>(), eq(uid), any<String>()) }
     }
-    
+
     @Test
     fun `process malformed JSON should return null and log error`() {
         val malformedJson = "{ \"uid\": 123, \"name\": \"Alice\", " // Intentionally malformed
@@ -106,7 +111,7 @@ class UserProfileTranslatorTest {
         // and an argument equal to jsonMissingUid.
         verify { mockLogger.error(any<String>(), eq(jsonMissingUid)) }
     }
-    
+
     @Test
     fun `process JSON missing required created field should return null and log error`() {
         val jsonMissingCreated = "{ \"uid\": 123, \"name\": \"Alice\" }" // Valid JSON, but missing created

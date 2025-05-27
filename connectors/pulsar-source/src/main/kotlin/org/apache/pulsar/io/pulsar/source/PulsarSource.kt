@@ -3,12 +3,10 @@ package org.apache.pulsar.io.pulsar.source
 import org.apache.pulsar.client.api.AuthenticationFactory
 import org.apache.pulsar.client.api.ClientBuilder
 import org.apache.pulsar.client.api.Consumer
+import org.apache.pulsar.client.api.ConsumerBuilder
 import org.apache.pulsar.client.api.Message
 import org.apache.pulsar.client.api.PulsarClient
 import org.apache.pulsar.client.api.Schema
-import org.apache.pulsar.client.api.ConsumerBuilder
-import org.apache.pulsar.client.impl.conf.ClientConfigurationData
-import org.apache.pulsar.client.impl.conf.ConsumerConfigurationData
 import org.apache.pulsar.functions.api.Record
 import org.apache.pulsar.io.core.PushSource
 import org.apache.pulsar.io.core.SourceContext
@@ -40,10 +38,9 @@ class PulsarSource : PushSource<ByteArray>() {
         this.client = testClient
         this.consumer = testConsumer
     }
-    
+
     // Default constructor for normal operation
     constructor() : super()
-
 
     override fun open(configMap: Map<String, Any>, sourceContext: SourceContext) {
         LOG.info("Opening PulsarSource with config: {}", configMap)
@@ -80,7 +77,6 @@ class PulsarSource : PushSource<ByteArray>() {
             }
         }
 
-
         if (!::consumer.isInitialized) { // Initialize only if not already injected for testing
             val consumerBuilder: ConsumerBuilder<ByteArray> = client.newConsumer(Schema.BYTES)
                 .subscriptionName(config.subscriptionName)
@@ -112,8 +108,11 @@ class PulsarSource : PushSource<ByteArray>() {
                     if (running.get()) {
                         val offered = incomingMessages.offer(msg, 1, TimeUnit.SECONDS) // Timeout to prevent blocking indefinitely
                         if (!offered) {
-                            LOG.warn("Internal message queue is full for subscription {}. Message from {} will be redelivered later.",
-                                config.subscriptionName, msg.messageId)
+                            LOG.warn(
+                                "Internal message queue is full for subscription {}. Message from {} will be redelivered later.",
+                                config.subscriptionName,
+                                msg.messageId,
+                            )
                             cons.negativeAcknowledge(msg) // Nack if queue is full to trigger redelivery
                         }
                         // Acknowledgment will happen after processing in the processing loop
@@ -138,7 +137,6 @@ class PulsarSource : PushSource<ByteArray>() {
                 throw RuntimeException("Failed to subscribe Pulsar Consumer", e)
             }
         }
-
 
         running.set(true)
         consumerExecutor = Executors.newSingleThreadExecutor { r ->
@@ -183,8 +181,12 @@ class PulsarSource : PushSource<ByteArray>() {
                 }
             LOG.trace("Processed and acknowledged message {} from subscription {}", message.messageId, config.subscriptionName)
         } catch (e: Exception) {
-            LOG.error("Error processing message {} from subscription {}. Sending negative acknowledgment.",
-                message.messageId, config.subscriptionName, e)
+            LOG.error(
+                "Error processing message {} from subscription {}. Sending negative acknowledgment.",
+                message.messageId,
+                config.subscriptionName,
+                e,
+            )
             consumer.negativeAcknowledge(message)
             // Optionally, implement retry logic within the source or rely on Pulsar's redelivery
         }
@@ -227,7 +229,7 @@ class PulsarSource : PushSource<ByteArray>() {
 
     class PulsarSourceRecord(
         private val message: Message<ByteArray>,
-        private val srcCtx: SourceContext
+        private val srcCtx: SourceContext,
     ) : Record<ByteArray> {
 
         override fun getKey(): Optional<String> = if (message.hasKey()) Optional.of(message.key) else Optional.empty()
@@ -236,19 +238,18 @@ class PulsarSource : PushSource<ByteArray>() {
 
         override fun getEventTime(): Optional<Long> =
             if (message.eventTime > 0) Optional.of(message.eventTime) else Optional.empty()
-        
+
         // Note: Pulsar's Java client API getSequenceId() returns long, not Long.
         // The Record interface expects Optional<Long>.
         override fun getSequenceId(): Optional<Long> =
             if (message.sequenceId >= 0) Optional.of(message.sequenceId) else Optional.empty()
-
 
         override fun getProperties(): Map<String, String> = message.properties ?: emptyMap()
 
         override fun getDestinationTopic(): Optional<String> = Optional.ofNullable(message.topicName)
 
         override fun getMessage(): Optional<org.apache.pulsar.client.api.Message<ByteArray>> = Optional.of(message)
-        
+
         override fun getRecordContext(): Optional<org.apache.pulsar.io.core.RecordContext> {
             return Optional.of(PulsarRecordContext(message, consumer = srcCtx.getPulsarConsumer()))
         }
@@ -266,11 +267,11 @@ class PulsarSource : PushSource<ByteArray>() {
             srcCtx.getPulsarConsumer<ByteArray>()?.negativeAcknowledge(message.messageId)
         }
     }
-    
+
     // Basic RecordContext for Pulsar messages
     class PulsarRecordContext(
         private val msg: Message<ByteArray>,
-        private val consumer: Consumer<ByteArray>?
+        private val consumer: Consumer<ByteArray>?,
     ) : org.apache.pulsar.io.core.RecordContext {
         override fun getPartitionId(): Optional<String> = Optional.ofNullable(msg.topicName) // Or specific partition info if available
         override fun getRecordSequence(): Optional<Long> = if (msg.sequenceId >= 0) Optional.of(msg.sequenceId) else Optional.empty()
@@ -285,7 +286,7 @@ class PulsarSource : PushSource<ByteArray>() {
             LOG.warn("PulsarRecordContext.fail() called for message: ${msg.messageId}. Sending negative acknowledgment.")
             consumer?.negativeAcknowledge(msg.messageId)
         }
-         override fun getAckFuture(): CompletableFuture<Void> {
+        override fun getAckFuture(): CompletableFuture<Void> {
             return consumer?.acknowledgeAsync(msg.messageId) ?: CompletableFuture.failedFuture(IllegalStateException("Consumer not available"))
         }
         override fun getNackFuture(): CompletableFuture<Void> {

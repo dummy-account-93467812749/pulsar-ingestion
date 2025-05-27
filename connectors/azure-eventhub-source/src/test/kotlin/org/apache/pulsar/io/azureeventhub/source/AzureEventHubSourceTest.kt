@@ -4,15 +4,23 @@ import com.azure.messaging.eventhubs.EventProcessorClient
 import com.azure.messaging.eventhubs.EventProcessorClientBuilder
 import com.azure.messaging.eventhubs.checkpointstore.blob.BlobCheckpointStore
 import com.azure.messaging.eventhubs.models.EventContext
-import com.azure.messaging.eventhubs.models.PartitionContext
 import com.azure.messaging.eventhubs.models.EventData
+import com.azure.messaging.eventhubs.models.PartitionContext
 import org.apache.pulsar.functions.api.Record
 import org.apache.pulsar.io.core.SourceContext
-import org.mockito.kotlin.*
+import org.mockito.kotlin.argumentCaptor
+import org.mockito.kotlin.capture
+import org.mockito.kotlin.doAnswer
+import org.mockito.kotlin.mock
+import org.mockito.kotlin.slot
+import org.mockito.kotlin.spy
+import org.mockito.kotlin.whenever
+import org.slf4j.Logger
+import org.testng.Assert.assertEquals
+import org.testng.Assert.assertNotNull
+import org.testng.Assert.assertTrue
 import org.testng.annotations.BeforeMethod
 import org.testng.annotations.Test
-import org.testng.Assert.*
-import org.slf4j.Logger
 import java.util.concurrent.CompletableFuture
 import java.util.function.Consumer
 
@@ -27,7 +35,6 @@ class AzureEventHubSourceTest {
     // Capture slots for callbacks
     private lateinit var processEventCallback: ArgumentCaptor<Consumer<EventContext>>
     private lateinit var processErrorCallback: ArgumentCaptor<Consumer<com.azure.messaging.eventhubs.models.ErrorContext>>
-
 
     @BeforeMethod
     fun setUp() {
@@ -77,7 +84,6 @@ class AzureEventHubSourceTest {
         // Let's assume we can verify the `consume` call for processEvent.
     }
 
-
     private fun createValidConfigMap(): Map<String, Any> {
         return mapOf(
             "fullyQualifiedNamespace" to "test-namespace.servicebus.windows.net",
@@ -85,8 +91,8 @@ class AzureEventHubSourceTest {
             "consumerGroup" to "\$Default",
             "connectionString" to "Endpoint=sb://test.servicebus.windows.net/;SharedAccessKeyName=key;SharedAccessKey=value;EntityPath=test-eventhub",
             "checkpointStore" to mapOf(
-                "blobContainerUrl" to "https://teststorage.blob.core.windows.net/testcontainer"
-            )
+                "blobContainerUrl" to "https://teststorage.blob.core.windows.net/testcontainer",
+            ),
         )
     }
 
@@ -113,11 +119,10 @@ class AzureEventHubSourceTest {
             // This is expected if the test environment doesn't have live Azure access or proper mocks.
             System.err.println("Note: testOpenStartsEventProcessorClient might fail without live Azure access or full DI for EventProcessorClientBuilder: " + e.message)
         } finally {
-             if (source::eventProcessorClient.isInitialized) source.close()
+            if (source::eventProcessorClient.isInitialized) source.close()
         }
         assertTrue(true, "Conceptual test: open should attempt to start client.")
     }
-
 
     @Test
     fun testProcessEventConsumesRecordAndUpdateCheckpoint() {
@@ -151,7 +156,6 @@ class AzureEventHubSourceTest {
             CompletableFuture.completedFuture(null)
         }.`when`(sourceSpy).consume(capture(consumedRecord))
 
-
         // Conceptual: if we had the processEvent lambda (e.g. processEventLambda)
         // processEventLambda.accept(mockEventContext)
         // val record = recordQueue.poll(1, TimeUnit.SECONDS)
@@ -182,12 +186,12 @@ class AzureEventHubSourceTest {
         try {
             source.open(createValidConfigMap(), mockSourceContext) // open it first
             if (source::eventProcessorClient.isInitialized) { // Check if client was initialized
-                 source.close()
+                source.close()
                 // verify(mockEventProcessorClient).stop() // This would be ideal with DI
             }
         } catch (e: Exception) {
-             System.err.println("Note: testCloseStopsEventProcessorClient might fail without live Azure access or full DI: " + e.message)
+            System.err.println("Note: testCloseStopsEventProcessorClient might fail without live Azure access or full DI: " + e.message)
         }
-         assertTrue(true, "Conceptual test: close should attempt to stop client.")
+        assertTrue(true, "Conceptual test: close should attempt to stop client.")
     }
 }

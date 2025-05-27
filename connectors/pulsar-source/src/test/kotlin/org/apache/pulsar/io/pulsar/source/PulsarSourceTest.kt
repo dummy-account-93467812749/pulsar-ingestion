@@ -1,20 +1,35 @@
 package org.apache.pulsar.io.pulsar.source
 
-import io.mockk.*
-import org.apache.pulsar.client.api.*
+import io.mockk.answers
+import io.mockk.atLeast
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.slot
+import io.mockk.spyk
+import io.mockk.verify
+import org.apache.pulsar.client.api.ClientBuilder
+import org.apache.pulsar.client.api.Consumer
+import org.apache.pulsar.client.api.ConsumerBuilder
+import org.apache.pulsar.client.api.Message
+import org.apache.pulsar.client.api.MessageId
+import org.apache.pulsar.client.api.MessageListener
+import org.apache.pulsar.client.api.PulsarClient
+import org.apache.pulsar.client.api.Schema
+import org.apache.pulsar.client.api.SubscriptionInitialPosition
+import org.apache.pulsar.client.api.SubscriptionType
 import org.apache.pulsar.functions.api.Record
 import org.apache.pulsar.io.core.SourceContext
 import org.slf4j.Logger
-import org.testng.Assert.*
+import org.testng.Assert.assertEquals
+import org.testng.Assert.assertNotNull
+import org.testng.Assert.assertTrue
 import org.testng.annotations.AfterMethod
 import org.testng.annotations.BeforeMethod
 import org.testng.annotations.Test
 import java.nio.charset.StandardCharsets
-import java.util.Optional
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
 
 class PulsarSourceTest {
 
@@ -49,7 +64,6 @@ class PulsarSourceTest {
         every { mockConsumer.acknowledgeAsync(any<MessageId>()) } returns CompletableFuture.completedFuture(null)
         every { mockConsumer.negativeAcknowledge(any<MessageId>()) } returns Unit
 
-
         // Instantiate PulsarSource using the internal constructor for testing
         source = PulsarSource(mockClient, mockConsumer)
 
@@ -73,7 +87,7 @@ class PulsarSourceTest {
             "topicNames" to listOf("persistent://public/default/test-input"),
             "subscriptionName" to "test-sub",
             "subscriptionType" to "Shared",
-            "subscriptionInitialPosition" to "Earliest"
+            "subscriptionInitialPosition" to "Earliest",
         )
     }
 
@@ -151,7 +165,6 @@ class PulsarSourceTest {
         every { mockMessage.topicName } returns "persistent://public/default/test-input"
         every { mockMessage.properties } returns mapOf("prop1" to "value1")
 
-
         // Manually trigger the listener with the mock message
         assertTrue(messageListenerSlot.isCaptured)
         messageListenerSlot.captured.received(mockConsumer, mockMessage)
@@ -169,7 +182,7 @@ class PulsarSourceTest {
 
         sourceSpy.close()
     }
-    
+
     @Test
     fun testNegativeAckOnProcessingError() {
         val configMap = createValidConfigMap()
@@ -195,7 +208,7 @@ class PulsarSourceTest {
 
         // Verify that negativeAcknowledge was called on the original consumer
         verify(timeout = 1000) { mockConsumer.negativeAcknowledge(mockMessage.messageId) }
-        
+
         sourceSpy.close()
     }
 }

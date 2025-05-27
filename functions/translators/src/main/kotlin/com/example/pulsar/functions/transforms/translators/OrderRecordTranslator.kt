@@ -49,10 +49,10 @@ class OrderRecordTranslator : Function<String, String> {
      */
     override fun process(input: String?, context: Context?): String? {
         if (context == null) {
-            println("Error: Context is null. Cannot initialize logger or process message.") 
+            println("Error: Context is null. Cannot initialize logger or process message.")
             return null
         }
-        log = context.logger 
+        log = context.logger
 
         if (input == null) {
             log.warn("Received null input. Skipping.")
@@ -70,10 +70,10 @@ class OrderRecordTranslator : Function<String, String> {
             }
 
             val orderId = inputJson.get("orderId").asText()
-            val timestamp = inputJson.get("placedAt").asText() 
+            val timestamp = inputJson.get("placedAt").asText()
 
             val eventId = UUID.randomUUID().toString()
-            val source = "order-service" 
+            val source = "order-service"
             val eventType = "ORDER_EVENT"
             val dataPayload: JsonNode = inputJson
 
@@ -82,13 +82,12 @@ class OrderRecordTranslator : Function<String, String> {
                 source = source,
                 eventType = eventType,
                 timestamp = timestamp,
-                data = dataPayload
+                data = dataPayload,
             )
 
             val outputJson = objectMapper.writeValueAsString(commonEvent)
             log.info("Successfully transformed OrderRecord (orderId: {}) to CommonEvent (eventId: {})", orderId, eventId)
             return outputJson
-
         } catch (e: Exception) {
             log.error("Failed to process OrderRecord input: {}. Error: {}", input, e.message, e)
             return null

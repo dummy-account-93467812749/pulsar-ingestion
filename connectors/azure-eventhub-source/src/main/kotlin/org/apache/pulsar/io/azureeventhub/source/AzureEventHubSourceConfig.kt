@@ -31,7 +31,7 @@ data class AzureEventHubSourceConfig(
 
     // Pulsar specific settings
     var receiveQueueSize: Int = 1000,
-    var pulsarFormat: String = "BYTES" // Future: STRING, JSON
+    var pulsarFormat: String = "BYTES", // Future: STRING, JSON
 
 ) : Serializable {
 
@@ -40,7 +40,7 @@ data class AzureEventHubSourceConfig(
         var tenantId: String? = null,
         var clientId: String? = null,
         var clientSecret: String? = null,
-        var authorityHost: String? = null // e.g., "https://login.microsoftonline.com/"
+        var authorityHost: String? = null, // e.g., "https://login.microsoftonline.com/"
     ) : Serializable {
         companion object {
             private const val serialVersionUID = 1L
@@ -54,7 +54,7 @@ data class AzureEventHubSourceConfig(
         // Option B: Storage account details + specific storage credential (if different from Event Hubs)
         var storageAccountName: String? = null,
         var storageContainerName: String? = null,
-        var storageConnectionString: String? = null // For storage account access
+        var storageConnectionString: String? = null, // For storage account access
         // Could also add fields for storage account access key or SAS token if needed
     ) : Serializable {
         companion object {
@@ -82,7 +82,7 @@ data class AzureEventHubSourceConfig(
 
             require(optionAProvided || optionBProvided) {
                 "For checkpointStore, either 'blobContainerUrl' (with appropriate top-level credential for access) " +
-                        "OR 'storageAccountName' and 'storageContainerName' must be provided."
+                    "OR 'storageAccountName' and 'storageContainerName' must be provided."
             }
             if (optionBProvided && it.storageConnectionString.isNullOrBlank()) {
                 // If storage account name/container is given, but no specific storage connection string,

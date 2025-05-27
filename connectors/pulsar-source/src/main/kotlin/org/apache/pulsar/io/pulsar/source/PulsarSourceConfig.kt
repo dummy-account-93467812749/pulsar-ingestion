@@ -17,7 +17,7 @@ data class PulsarSourceConfig(
 
     // Pulsar Consumer Configuration
     var topicNames: List<String>? = null, // List of topics
-    var topicsPattern: String? = null,    // Alternative to topicNames
+    var topicsPattern: String? = null, // Alternative to topicNames
     var subscriptionName: String = "pulsar-source-subscription",
     var subscriptionType: SubscriptionType = SubscriptionType.Shared,
     var subscriptionInitialPosition: SubscriptionInitialPosition = SubscriptionInitialPosition.Latest,
@@ -46,14 +46,14 @@ data class PulsarSourceConfig(
     var forwardProperties: Boolean = true,
     var forwardMessageId: Boolean = false,
     var forwardSequenceId: Boolean = false,
-    var forwardPublishTime: Boolean = false
+    var forwardPublishTime: Boolean = false,
 
 ) : Serializable {
 
     data class DeadLetterPolicyConfig(
         var maxRedeliverCount: Int = 10,
         var deadLetterTopic: String? = null,
-        var initialSubscriptionName: String? = null
+        var initialSubscriptionName: String? = null,
     ) : Serializable {
         companion object {
             private const val serialVersionUID = 1L

@@ -2,16 +2,20 @@ package com.example.pulsar.functions.transforms.translators
 
 import com.example.pulsar.common.CommonEvent
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
-import io.mockk.*
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.verify
 import org.apache.pulsar.functions.api.Context
-import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.slf4j.Logger
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
-
 class InventoryUpdateTranslatorTest {
 
     private lateinit var translator: InventoryUpdateTranslator
@@ -56,7 +60,7 @@ class InventoryUpdateTranslatorTest {
         assertEquals(sku, dataNode.get("sku").asText())
         assertEquals(qty, dataNode.get("qty").asInt())
         assertEquals(updateTimeEpoch, dataNode.get("updateTime").asLong())
-        
+
         // Less strict: Check that info is logged with any message format,
         // an argument equal to sku, and any other string argument (for eventId).
         verify { mockLogger.info(any<String>(), eq(sku), any<String>()) }

@@ -16,9 +16,9 @@ class AzureEventHubSourceConfigTest {
             "consumerGroup" to "test-consumer-group",
             "connectionString" to "Endpoint=sb://test.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=testKey=",
             "checkpointStore" to mapOf(
-                "blobContainerUrl" to "https://teststorage.blob.core.windows.net/testcontainer"
+                "blobContainerUrl" to "https://teststorage.blob.core.windows.net/testcontainer",
                 // Assuming credential-less access via SAS in URL or environment-based DefaultAzureCredential
-            )
+            ),
         )
     }
 
@@ -112,7 +112,7 @@ class AzureEventHubSourceConfigTest {
             AzureEventHubSourceConfig.load(configMap)
         }
     }
-    
+
     @Test
     fun testValidationFails_InvalidCheckpointStore_MissingContainerName() {
         val configMap = createValidConfigMap()

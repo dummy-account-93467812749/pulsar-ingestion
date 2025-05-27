@@ -18,7 +18,7 @@ class PulsarSourceConfigTest {
             "topicNames" to listOf("persistent://public/default/test-input"),
             "subscriptionName" to "test-sub",
             "subscriptionType" to "Shared", // String representation
-            "subscriptionInitialPosition" to "Earliest" // String representation
+            "subscriptionInitialPosition" to "Earliest", // String representation
         )
     }
 
@@ -102,9 +102,14 @@ class PulsarSourceConfigTest {
     @DataProvider(name = "invalidTopicConfigs")
     fun invalidTopicConfigs(): Array<Array<Any>> {
         return arrayOf(
-            arrayOf(createValidConfigMap().apply { remove("topicNames"); remove("topicsPattern") }), // Neither provided
+            arrayOf(
+                createValidConfigMap().apply {
+                    remove("topicNames")
+                    remove("topicsPattern")
+                },
+            ), // Neither provided
             arrayOf(createValidConfigMap().apply { this["topicNames"] = emptyList<String>() }), // Empty topicNames list
-            arrayOf(createValidConfigMap().apply { this["topicsPattern"] = "  " }) // Blank topicsPattern
+            arrayOf(createValidConfigMap().apply { this["topicsPattern"] = "  " }), // Blank topicsPattern
         )
     }
 
@@ -114,10 +119,10 @@ class PulsarSourceConfigTest {
             PulsarSourceConfig.load(invalidMap)
         }
     }
-    
+
     @Test
     fun testValidationFails_BothTopicNamesAndPattern() {
-         val configMap = createValidConfigMap().apply {
+        val configMap = createValidConfigMap().apply {
             this["topicsPattern"] = "persistent://public/default/some-pattern"
         } // topicNames is already in createValidConfigMap
         expectThrows(IllegalArgumentException::class.java) {
@@ -133,7 +138,7 @@ class PulsarSourceConfigTest {
             PulsarSourceConfig.load(configMap)
         }
     }
-    
+
     @Test
     fun testValidationFails_BlankSubscriptionName() {
         val configMap = createValidConfigMap().apply { this["subscriptionName"] = " " }
@@ -151,7 +156,7 @@ class PulsarSourceConfigTest {
             PulsarSourceConfig.load(configMap)
         }
     }
-    
+
     @Test
     fun testValidationFails_InvalidDeadLetterPolicy_NegativeRedeliverCount() {
         val configMap = createValidConfigMap().apply {
@@ -169,7 +174,7 @@ class PulsarSourceConfigTest {
             "topicNames" to listOf("persistent://public/default/test-input"),
             "subscriptionName" to "test-sub",
             "subscriptionType" to "Key_Shared", // String representation
-            "subscriptionInitialPosition" to "Earliest" // String representation
+            "subscriptionInitialPosition" to "Earliest", // String representation
         )
         val config = PulsarSourceConfig.load(configMap)
         assertEquals(config.subscriptionType, SubscriptionType.Key_Shared)
@@ -182,7 +187,7 @@ class PulsarSourceConfigTest {
             "serviceUrl" to "pulsar://localhost:6650",
             "topicNames" to listOf("persistent://public/default/test-input"),
             "subscriptionName" to "test-sub",
-            "subscriptionType" to "InvalidType"
+            "subscriptionType" to "InvalidType",
         )
         expectThrows(IOException::class.java) {
             PulsarSourceConfig.load(configMap)
@@ -195,7 +200,7 @@ class PulsarSourceConfigTest {
             "serviceUrl" to "pulsar://localhost:6650",
             "topicNames" to listOf("persistent://public/default/test-input"),
             "subscriptionName" to "test-sub",
-            "subscriptionInitialPosition" to "InvalidPosition"
+            "subscriptionInitialPosition" to "InvalidPosition",
         )
         expectThrows(IOException::class.java) {
             PulsarSourceConfig.load(configMap)

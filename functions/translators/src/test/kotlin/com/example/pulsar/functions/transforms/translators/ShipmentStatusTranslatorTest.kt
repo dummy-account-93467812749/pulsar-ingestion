@@ -1,16 +1,21 @@
 package com.example.pulsar.functions.transforms.translators
 
-import com.example.pulsar.common.CommonEvent // Ensure this is the correct CommonEvent
+import com.example.pulsar.common.CommonEvent
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
-import io.mockk.*
-import org.apache.pulsar.functions.api.Context // Ensure this is the correct Context
-import org.junit.jupiter.api.Assertions.*
-import org.junit.jupiter.api.BeforeEach // Ensure this is org.junit.jupiter.api.BeforeEach
-import org.junit.jupiter.api.Test // Ensure this is org.junit.jupiter.api.Test
-import org.slf4j.Logger // Ensure this is org.slf4j.Logger
-import java.time.Instant // Ensure this is java.time.Instant
-import java.time.ZoneOffset // Ensure this is java.time.ZoneOffset
-import java.time.format.DateTimeFormatter // Ensure this is java.time.format.DateTimeFormatter
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.verify
+import org.apache.pulsar.functions.api.Context
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.slf4j.Logger
+import java.time.Instant
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 
 class ShipmentStatusTranslatorTest {
 
@@ -56,7 +61,7 @@ class ShipmentStatusTranslatorTest {
         assertEquals(shipId, dataNode.get("shipId").asText())
         assertEquals(status, dataNode.get("status").asText())
         assertEquals(deliveredAtEpoch, dataNode.get("deliveredAt").asLong())
-        
+
         // Less strict: Check that info is logged with any message format,
         // an argument equal to shipId, and any other string argument (for eventId).
         verify { mockLogger.info(any<String>(), eq(shipId), any<String>()) }

@@ -1,7 +1,6 @@
 package org.apache.pulsar.io.azureeventhub.source
 
 import com.azure.identity.DefaultAzureCredentialBuilder
-import com.azure.messaging.eventhubs.EventHubClientBuilder
 import com.azure.messaging.eventhubs.EventProcessorClient
 import com.azure.messaging.eventhubs.EventProcessorClientBuilder
 import com.azure.messaging.eventhubs.checkpointstore.blob.BlobCheckpointStore
@@ -13,7 +12,6 @@ import org.apache.pulsar.functions.api.Record
 import org.apache.pulsar.io.core.PushSource
 import org.apache.pulsar.io.core.SourceContext
 import org.slf4j.LoggerFactory
-import java.time.Instant
 import java.util.Optional
 import java.util.concurrent.CompletableFuture
 import java.util.function.Consumer
@@ -73,7 +71,6 @@ class AzureEventHubSource : PushSource<ByteArray>() {
         config.maxBatchSize?.let { eventProcessorClientBuilder.maxBatchSize(it) }
         config.maxWaitTimeInSeconds?.let { eventProcessorClientBuilder.maxWaitTime(java.time.Duration.ofSeconds(it.toLong())) }
 
-
         try {
             eventProcessorClient = eventProcessorClientBuilder.buildEventProcessorClient()
             LOG.info("EventProcessorClient built successfully. Starting event processing.")
@@ -101,9 +98,11 @@ class AzureEventHubSource : PushSource<ByteArray>() {
                 blobContainerClientBuilder.credential(blobCredentialBuilder.build())
                 LOG.info("Configured BlobCheckpointStore with DefaultAzureCredential via blobContainerUrl.")
             } else {
-                LOG.warn("CheckpointStore blobContainerUrl is set, but EventHub connectionString is also set. " +
+                LOG.warn(
+                    "CheckpointStore blobContainerUrl is set, but EventHub connectionString is also set. " +
                         "Blob access might use implicit credentials if blobContainerUrl does not include a SAS token. " +
-                        "Ensure the identity used for EventHubs also has Blob Storage permissions, or provide storage-specific credentials for checkpointing.")
+                        "Ensure the identity used for EventHubs also has Blob Storage permissions, or provide storage-specific credentials for checkpointing.",
+                )
                 // If blobContainerUrl includes SAS, it will be used. Otherwise, it might try anonymous or fail if EH conn string is not a full Azure credential.
                 // This path might require DefaultAzureCredential or ManagedIdentity if RBAC is used for storage access.
             }
@@ -119,9 +118,11 @@ class AzureEventHubSource : PushSource<ByteArray>() {
                 blobContainerClientBuilder.credential(blobCredentialBuilder.build())
                 LOG.info("Configured BlobCheckpointStore with DefaultAzureCredential via storage account name.")
             } else {
-                 LOG.warn("CheckpointStore storageAccountName/ContainerName is set, but no specific storage connection string provided, " +
-                         "and EventHub connectionString is present. Blob access might use implicit credentials. " +
-                         "Ensure the identity used for EventHubs also has Blob Storage permissions, or provide storage-specific credentials.")
+                LOG.warn(
+                    "CheckpointStore storageAccountName/ContainerName is set, but no specific storage connection string provided, " +
+                        "and EventHub connectionString is present. Blob access might use implicit credentials. " +
+                        "Ensure the identity used for EventHubs also has Blob Storage permissions, or provide storage-specific credentials.",
+                )
             }
         } else {
             throw IllegalArgumentException("Invalid CheckpointStore configuration. Provide blobContainerUrl or storageAccountName/storageContainerName.")
@@ -139,19 +140,23 @@ class AzureEventHubSource : PushSource<ByteArray>() {
         return BlobCheckpointStore(blobContainerAsyncClient)
     }
 
-
     private fun consumeEventData(eventContext: EventContext) {
         LOG.trace("Processing event from partition ${eventContext.partitionContext.partitionId} with sequence number ${eventContext.eventData.sequenceNumber}")
         try {
             val record = AzureEventHubRecord(eventContext, sourceContext)
             consume(record) // This is PushSource.consume()
             eventContext.updateCheckpoint() // Update checkpoint after successful processing
-            LOG.debug("Successfully processed and checkpointed event from partition {} sequenceNumber {}",
-                eventContext.partitionContext.partitionId, eventContext.eventData.sequenceNumber)
+            LOG.debug(
+                "Successfully processed and checkpointed event from partition {} sequenceNumber {}",
+                eventContext.partitionContext.partitionId,
+                eventContext.eventData.sequenceNumber,
+            )
         } catch (e: Exception) {
             LOG.error(
                 "Error processing event from partition {} sequenceNumber {}. Event will likely be reprocessed.",
-                eventContext.partitionContext.partitionId, eventContext.eventData.sequenceNumber, e
+                eventContext.partitionContext.partitionId,
+                eventContext.eventData.sequenceNumber,
+                e,
             )
             // Do not update checkpoint on error, to allow reprocessing
         }
@@ -172,7 +177,7 @@ class AzureEventHubSource : PushSource<ByteArray>() {
     // Inner class for Pulsar Record implementation
     class AzureEventHubRecord(
         private val eventContext: EventContext,
-        private val srcCtx: SourceContext
+        private val srcCtx: SourceContext,
     ) : Record<ByteArray> {
         private val eventData = eventContext.eventData
 
@@ -201,13 +206,21 @@ class AzureEventHubSource : PushSource<ByteArray>() {
         override fun ack() {
             // EventProcessorClient handles checkpointing which is analogous to acking.
             // Individual ack on Pulsar record might not directly map here unless custom checkpointing logic.
-            LOG.trace("Ack called for Event Hubs record: partition {}, offset {}, seqNo {}",
-                eventContext.partitionContext.partitionId, eventData.offset, eventData.sequenceNumber)
+            LOG.trace(
+                "Ack called for Event Hubs record: partition {}, offset {}, seqNo {}",
+                eventContext.partitionContext.partitionId,
+                eventData.offset,
+                eventData.sequenceNumber,
+            )
         }
 
         override fun fail() {
-            LOG.warn("Fail called for Event Hubs record: partition {}, offset {}, seqNo {}. This typically implies reprocessing from last checkpoint.",
-                eventContext.partitionContext.partitionId, eventData.offset, eventData.sequenceNumber)
+            LOG.warn(
+                "Fail called for Event Hubs record: partition {}, offset {}, seqNo {}. This typically implies reprocessing from last checkpoint.",
+                eventContext.partitionContext.partitionId,
+                eventData.offset,
+                eventData.sequenceNumber,
+            )
             // EventProcessorClient will reprocess from the last successful checkpoint if an error occurs
             // during processEvent or if updateCheckpoint isn't called.
         }
@@ -215,7 +228,7 @@ class AzureEventHubSource : PushSource<ByteArray>() {
         override fun getMessage(): Optional<org.apache.pulsar.client.api.Message<ByteArray>> = Optional.empty()
 
         override fun getRecordContext(): Optional<org.apache.pulsar.io.core.RecordContext> {
-             return Optional.of(
+            return Optional.of(
                 object : org.apache.pulsar.io.core.RecordContext {
                     override fun getPartitionId(): Optional<String> = Optional.of("eventhub-partition-${eventContext.partitionContext.partitionId}")
                     override fun getRecordSequence(): Optional<Long> = Optional.of(eventData.sequenceNumber)
@@ -227,18 +240,29 @@ class AzureEventHubSource : PushSource<ByteArray>() {
                             // Simulate checkpoint update or tie to actual async checkpoint if possible
                             eventContext.updateCheckpointAsync().whenComplete { _, ex ->
                                 if (ex != null) {
-                                    LOG.error("Async checkpoint update failed via getAckFuture for partition {} seqNo {}",
-                                        eventContext.partitionContext.partitionId, eventData.sequenceNumber, ex)
+                                    LOG.error(
+                                        "Async checkpoint update failed via getAckFuture for partition {} seqNo {}",
+                                        eventContext.partitionContext.partitionId,
+                                        eventData.sequenceNumber,
+                                        ex,
+                                    )
                                     future.completeExceptionally(ex)
                                 } else {
-                                    LOG.debug("Async checkpoint update successful via getAckFuture for partition {} seqNo {}",
-                                        eventContext.partitionContext.partitionId, eventData.sequenceNumber)
+                                    LOG.debug(
+                                        "Async checkpoint update successful via getAckFuture for partition {} seqNo {}",
+                                        eventContext.partitionContext.partitionId,
+                                        eventData.sequenceNumber,
+                                    )
                                     future.complete(null)
                                 }
                             }
                         } catch (e: Exception) {
-                            LOG.error("Exception during async checkpoint update via getAckFuture for partition {} seqNo {}",
-                                eventContext.partitionContext.partitionId, eventData.sequenceNumber, e)
+                            LOG.error(
+                                "Exception during async checkpoint update via getAckFuture for partition {} seqNo {}",
+                                eventContext.partitionContext.partitionId,
+                                eventData.sequenceNumber,
+                                e,
+                            )
                             future.completeExceptionally(e)
                         }
                         return future
@@ -250,7 +274,7 @@ class AzureEventHubSource : PushSource<ByteArray>() {
                         future.complete(null)
                         return future
                     }
-                }
+                },
             )
         }
     }
@@ -259,19 +283,26 @@ class AzureEventHubSource : PushSource<ByteArray>() {
 // Helper callback classes for EventProcessorClient
 class ProcessEvent(
     private val sourceContext: SourceContext,
-    private val eventConsumer: Consumer<EventContext>
+    private val eventConsumer: Consumer<EventContext>,
 ) : Consumer<EventContext> {
     companion object {
         private val LOG_CALLBACK = LoggerFactory.getLogger(ProcessEvent::class.java)
     }
     override fun accept(eventContext: EventContext) {
-        LOG_CALLBACK.debug("ProcessEvent: Received event from partition {}, sequence number {}",
-            eventContext.partitionContext.partitionId, eventContext.eventData.sequenceNumber)
+        LOG_CALLBACK.debug(
+            "ProcessEvent: Received event from partition {}, sequence number {}",
+            eventContext.partitionContext.partitionId,
+            eventContext.eventData.sequenceNumber,
+        )
         try {
             eventConsumer.accept(eventContext)
         } catch (e: Exception) {
-            LOG_CALLBACK.error("ProcessEvent: Unhandled exception during event consumption for partition {}, sequence number {}",
-                eventContext.partitionContext.partitionId, eventContext.eventData.sequenceNumber, e)
+            LOG_CALLBACK.error(
+                "ProcessEvent: Unhandled exception during event consumption for partition {}, sequence number {}",
+                eventContext.partitionContext.partitionId,
+                eventContext.eventData.sequenceNumber,
+                e,
+            )
             // This error should ideally be handled within the eventConsumer logic.
             // If it reaches here, it's an unexpected error.
             // The EventProcessorClient's error handler (processError) will be called for partition-level errors.
@@ -289,7 +320,7 @@ class ProcessError(private val sourceContext: SourceContext) : Consumer<ErrorCon
             errorContext.partitionContext.partitionId,
             errorContext.operation,
             errorContext.throwable.message,
-            errorContext.throwable
+            errorContext.throwable,
         )
         // TODO: Implement more sophisticated error handling, e.g., metrics, specific shutdown conditions.
         // sourceContext.recordMetric("eventhub_errors", 1)

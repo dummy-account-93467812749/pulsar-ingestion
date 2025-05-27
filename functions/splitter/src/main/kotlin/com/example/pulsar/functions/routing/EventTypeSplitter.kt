@@ -45,16 +45,16 @@ class EventTypeSplitter : Function<String, Void> {
 
         // Sanitize eventType for use in topic names: lowercase and replace non-alphanumeric with hyphens
         val sanitizedEventType = commonEvent.eventType.lowercase().replace(Regex("[^a-z0-9-]"), "-")
-        
+
         // Construct target topic name
         // Assuming a default tenant 'public' and namespace 'default' for routed topics.
         // This could be made configurable via userConfig if needed.
-        val targetTopic = "persistent://public/default/fn-split-${sanitizedEventType}"
+        val targetTopic = "persistent://public/default/fn-split-$sanitizedEventType"
 
         try {
             // Send the original input string to the target topic
             context.newOutputMessage(targetTopic, input.toByteArray()) // Send as byte array
-                .sendAsync() 
+                .sendAsync()
             // Note: The original plan mentioned .value(input) which is for schema-based messages.
             // For arbitrary JSON strings passed as String/byte[], just pass the payload directly.
 
@@ -66,7 +66,7 @@ class EventTypeSplitter : Function<String, Void> {
                 commonEvent.eventType,
                 targetTopic,
                 e.message,
-                e
+                e,
             )
             // Depending on desired error handling, you might throw an exception or simply log and move on.
             // For now, just log.

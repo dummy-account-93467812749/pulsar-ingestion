@@ -3,15 +3,25 @@ package com.example.pulsar.functions.routing
 import com.example.pulsar.common.CommonEvent
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.apache.pulsar.client.admin.PulsarAdmin
-import org.apache.pulsar.client.api.*
-import org.junit.jupiter.api.*
+import org.apache.pulsar.client.api.Consumer
+import org.apache.pulsar.client.api.Producer
+import org.apache.pulsar.client.api.PulsarClient
+import org.apache.pulsar.client.api.SubscriptionInitialPosition
+import org.junit.jupiter.api.AfterAll
+import org.junit.jupiter.api.Assertions
+import org.junit.jupiter.api.BeforeAll
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.api.TestInstance.Lifecycle
+import org.slf4j.LoggerFactory
 import org.testcontainers.containers.PulsarContainer
+import org.testcontainers.containers.output.Slf4jLogConsumer
+import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.utility.DockerImageName
+import org.testcontainers.utility.MountableFile
 import java.util.UUID
 import java.util.concurrent.TimeUnit
-import org.slf4j.LoggerFactory
-import org.testcontainers.containers.output.Slf4jLogConsumer
-import org.testcontainers.utility.MountableFile
+import kotlin.jvm.JvmField
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class EventTypeSplitterIntegrationTest {
@@ -22,8 +32,9 @@ class EventTypeSplitterIntegrationTest {
 
     private val inputTopic = "persistent://public/default/splitter-integration-input"
     private val functionName = "eventTypeSplitterIntegrationTest"
+
     // Path to the JAR inside the container
-    private val containerJarPath = "/pulsar/libs/splitter.jar" 
+    private val containerJarPath = "/pulsar/libs/splitter.jar"
 
     companion object {
         private val logger = LoggerFactory.getLogger(EventTypeSplitterIntegrationTest::class.java)
@@ -33,17 +44,17 @@ class EventTypeSplitterIntegrationTest {
         // For this example, we'll stick to a recent version.
         @Container
         @JvmField
-        val pulsarContainer: PulsarContainer = PulsarContainer(DockerImageName.parse("apachepulsar/pulsar:3.2.2")) 
+        val pulsarContainer: PulsarContainer = PulsarContainer(DockerImageName.parse("apachepulsar/pulsar:3.2.2"))
             .withLogConsumer(Slf4jLogConsumer(logger).withPrefix("PULSAR_CONTAINER"))
             .withCopyToContainer(
                 // This path needs to be correct relative to where Gradle executes the tests.
                 // Assuming execution from the root project directory:
-                MountableFile.forHostPath("functions/splitter/build/libs/splitter.jar"), 
-                "/pulsar/libs/splitter.jar" // Target path inside the container
+                MountableFile.forHostPath("functions/splitter/build/libs/splitter.jar"),
+                "/pulsar/libs/splitter.jar", // Target path inside the container
             )
-            // Enable function worker, not strictly necessary for PulsarContainer if it runs standalone with functions enabled by default
-            // .withCommand("bin/pulsar", "standalone", "-nfw", "-nss") // Example if functions need explicit enabling
-            // For PulsarContainer, functions are typically available.
+        // Enable function worker, not strictly necessary for PulsarContainer if it runs standalone with functions enabled by default
+        // .withCommand("bin/pulsar", "standalone", "-nfw", "-nss") // Example if functions need explicit enabling
+        // For PulsarContainer, functions are typically available.
     }
 
     @BeforeAll
@@ -58,7 +69,7 @@ class EventTypeSplitterIntegrationTest {
         adminClient = PulsarAdmin.builder()
             .serviceHttpUrl(pulsarContainer.httpServiceUrl)
             .build()
-        
+
         // Deploy the function
         logger.info("Deploying function $functionName from JAR $containerJarPath")
         try {
@@ -69,7 +80,7 @@ class EventTypeSplitterIntegrationTest {
                 "--inputs", inputTopic,
                 "--name", functionName,
                 "--tenant", "public",
-                "--namespace", "default"
+                "--namespace", "default",
                 // Note: Output topic is dynamic, so not specified here.
                 // If the function had a static output, it would be: --output persistent://public/default/some-output
             )
@@ -83,7 +94,6 @@ class EventTypeSplitterIntegrationTest {
             // Wait a bit for the function to be fully initialized
             // This can be flaky; a better approach is to check function status via admin API
             Thread.sleep(5000) // Giving 5 seconds for the function to initialize
-
         } catch (e: Exception) {
             logger.error("Error deploying Pulsar function: ${e.message}", e)
             // Force container logs to be printed for easier debugging
@@ -97,7 +107,7 @@ class EventTypeSplitterIntegrationTest {
         // Clean up resources
         // Undeploy function (optional, as container will be destroyed)
         try {
-             adminClient.functions().deleteFunction("public", "default", functionName)
+            adminClient.functions().deleteFunction("public", "default", functionName)
         } catch (e: Exception) {
             logger.warn("Failed to delete function $functionName: ${e.message}", e)
         }
@@ -105,7 +115,7 @@ class EventTypeSplitterIntegrationTest {
         pulsarClient.close()
         adminClient.close()
         // Container is stopped automatically by Testcontainers JUnit 5 extension
-        // pulsarContainer.stop() 
+        // pulsarContainer.stop()
     }
 
     private fun createProducer(topic: String): Producer<ByteArray> {
@@ -129,7 +139,7 @@ class EventTypeSplitterIntegrationTest {
             source = source,
             eventType = eventType,
             timestamp = "2023-01-01T00:00:00Z", // Using a fixed timestamp for consistency
-            data = objectMapper.readTree(data)
+            data = objectMapper.readTree(data),
         )
         return objectMapper.writeValueAsString(event)
     }
@@ -152,7 +162,7 @@ class EventTypeSplitterIntegrationTest {
         Assertions.assertNotNull(receivedMessage, "Message should be received from $expectedOutputTopic")
         val receivedEvent = objectMapper.readValue(receivedMessage.data, CommonEvent::class.java)
         Assertions.assertEquals(eventType, receivedEvent.eventType, "Received event type should match")
-        
+
         consumer.acknowledge(receivedMessage)
         logger.info("Successfully received and acknowledged message from '$expectedOutputTopic'")
 
@@ -214,7 +224,7 @@ class EventTypeSplitterIntegrationTest {
         // Expected sanitization: "payment-processed-v2-"
         // The function logic: commonEvent.eventType.lowercase().replace(Regex("[^a-z0-9-]"), "-")
         // "payment processed v2!" -> "payment-processed-v2-" (space becomes -, ! becomes -)
-        val sanitizedEventType = "payment-processed-v2-" 
+        val sanitizedEventType = "payment-processed-v2-"
         val expectedOutputTopic = "persistent://public/default/fn-split-$sanitizedEventType"
         val testMessageJson = createCommonEventJson(eventType)
 
@@ -228,10 +238,10 @@ class EventTypeSplitterIntegrationTest {
         Assertions.assertNotNull(receivedMessage, "Message should be received from $expectedOutputTopic")
         val receivedEvent = objectMapper.readValue(receivedMessage.data, CommonEvent::class.java)
         Assertions.assertEquals(eventType, receivedEvent.eventType)
-        
+
         consumer.acknowledge(receivedMessage)
         logger.info("Received and acknowledged message from '$expectedOutputTopic'")
-        
+
         producer.close()
         consumer.close()
     }
