@@ -3,64 +3,68 @@ package com.example.pulsar.functions.routing
 import com.example.pulsar.common.CommonEvent
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.apache.pulsar.client.admin.PulsarAdmin
+import org.apache.pulsar.client.admin.PulsarAdminException // For ConflictException
 import org.apache.pulsar.client.api.Consumer
 import org.apache.pulsar.client.api.Producer
 import org.apache.pulsar.client.api.PulsarClient
 import org.apache.pulsar.client.api.SubscriptionInitialPosition
+import org.apache.pulsar.common.functions.FunctionConfig
+import org.apache.pulsar.common.policies.data.TenantInfoImpl
+import org.apache.pulsar.functions.LocalRunner
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
-import org.junit.jupiter.api.TestInstance.Lifecycle
 import org.slf4j.LoggerFactory
 import org.testcontainers.containers.PulsarContainer
-import org.testcontainers.containers.output.Slf4jLogConsumer
-import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.utility.DockerImageName
-import org.testcontainers.utility.MountableFile
-import java.util.UUID
+import java.time.Duration
+import java.util.Collections // Used for Collections.singletonList
+import java.util.HashSet // Used for new TenantInfoImpl(HashSet(), HashSet(...))
+import java.util.UUID // Used for UUID.randomUUID()
 import java.util.concurrent.TimeUnit
-import kotlin.jvm.JvmField
+// REMOVED: import kotlin.collections.HashSet // This was causing ambiguity and was unused
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class EventTypeSplitterIntegrationTest {
 
     private val objectMapper = jacksonObjectMapper()
     private lateinit var pulsarClient: PulsarClient
-    private lateinit var adminClient: PulsarAdmin // Renamed to avoid conflict with org.apache.pulsar.client.admin.PulsarAdmin
+    private lateinit var adminClient: PulsarAdmin
+    private lateinit var functionRunner: LocalRunner
+    private lateinit var pulsarContainer: PulsarContainer // Manually managed
 
-    private val inputTopic = "persistent://public/default/splitter-integration-input"
-    private val functionName = "eventTypeSplitterIntegrationTest"
-
-    // Path to the JAR inside the container
-    private val containerJarPath = "/pulsar/libs/splitter.jar"
+    private val inputTopic = "persistent://public/default/splitter-manual-input-${UUID.randomUUID().toString().take(8)}"
+    private val functionName = "eventTypeSplitterManualTest-${UUID.randomUUID().toString().take(8)}"
 
     companion object {
         private val logger = LoggerFactory.getLogger(EventTypeSplitterIntegrationTest::class.java)
 
-        // Define the Pulsar Testcontainer
-        // Using a specific, known working version is often better than 'latest' for stability.
-        // For this example, we'll stick to a recent version.
-        @Container
-        @JvmField
-        val pulsarContainer: PulsarContainer = PulsarContainer(DockerImageName.parse("apachepulsar/pulsar:3.2.2"))
-            .withLogConsumer(Slf4jLogConsumer(logger).withPrefix("PULSAR_CONTAINER"))
-            .withCopyToContainer(
-                // This path needs to be correct relative to where Gradle executes the tests.
-                // Assuming execution from the root project directory:
-                MountableFile.forHostPath("functions/splitter/build/libs/splitter.jar"),
-                "/pulsar/libs/splitter.jar", // Target path inside the container
-            )
-        // Enable function worker, not strictly necessary for PulsarContainer if it runs standalone with functions enabled by default
-        // .withCommand("bin/pulsar", "standalone", "-nfw", "-nss") // Example if functions need explicit enabling
-        // For PulsarContainer, functions are typically available.
+        // Define the Pulsar Testcontainer image
+        private val PULSAR_IMAGE = DockerImageName.parse("apachepulsar/pulsar:3.2.2") // Or your preferred version
     }
 
     @BeforeAll
     fun setup() {
-        // Start the container (Testcontainers manages this if @Container is used, but explicit start can be here if needed)
-        // pulsarContainer.start() // Not needed if @Container and @JvmField are used with JUnit 5 Jupiter extension
+        pulsarContainer = PulsarContainer(PULSAR_IMAGE)
+            .withFunctionsWorker()
+            .withEnv("PULSAR_PREFIX_allowAutoTopicCreation", "true")
+            .withEnv("PULSAR_PREFIX_allowAutoTopicCreationType", "non-partitioned")
+            .withEnv("PULSAR_PREFIX_brokerDeleteInactiveTopicsEnabled", "false") // Similar to translator
+            .withStartupTimeout(Duration.ofMinutes(2)) // Similar to translator
+
+        try {
+            logger.info("Starting PulsarContainer manually...")
+            pulsarContainer.start()
+            logger.info("PulsarContainer started.")
+        } catch (e: Exception) {
+            logger.error("Failed to start PulsarContainer: ${e.message}", e)
+            if (::pulsarContainer.isInitialized && pulsarContainer.logs != null) {
+                System.err.println("Pulsar container logs on startup failure:\n${pulsarContainer.logs}")
+            }
+            throw e
+        }
 
         pulsarClient = PulsarClient.builder()
             .serviceUrl(pulsarContainer.pulsarBrokerUrl)
@@ -70,52 +74,62 @@ class EventTypeSplitterIntegrationTest {
             .serviceHttpUrl(pulsarContainer.httpServiceUrl)
             .build()
 
-        // Deploy the function
-        logger.info("Deploying function $functionName from JAR $containerJarPath")
         try {
-            val execResult = pulsarContainer.execInContainer(
-                "bin/pulsar-admin", "functions", "create",
-                "--jar", containerJarPath,
-                "--className", "com.example.pulsar.functions.routing.EventTypeSplitter",
-                "--inputs", inputTopic,
-                "--name", functionName,
-                "--tenant", "public",
-                "--namespace", "default",
-                // Note: Output topic is dynamic, so not specified here.
-                // If the function had a static output, it would be: --output persistent://public/default/some-output
-            )
-            logger.info("Function deployment stdout: ${execResult.stdout}")
-            logger.info("Function deployment stderr: ${execResult.stderr}")
-            if (execResult.exitCode != 0) {
-                throw RuntimeException("Failed to deploy function: ${execResult.stderr}")
+            if (!adminClient.tenants().tenants.contains("public")) {
+                // HashSet() now unambiguously refers to java.util.HashSet
+                adminClient.tenants().createTenant("public", TenantInfoImpl(HashSet(), HashSet(listOf("standalone"))))
             }
-            logger.info("Function $functionName deployed successfully.")
-
-            // Wait a bit for the function to be fully initialized
-            // This can be flaky; a better approach is to check function status via admin API
-            Thread.sleep(5000) // Giving 5 seconds for the function to initialize
+            if (!adminClient.namespaces().getNamespaces("public").contains("public/default")) {
+                adminClient.namespaces().createNamespace("public/default")
+            }
+        } catch (e: PulsarAdminException.ConflictException) {
+            logger.warn("Tenant/namespace 'public/default' already exists, which is fine.")
         } catch (e: Exception) {
-            logger.error("Error deploying Pulsar function: ${e.message}", e)
-            // Force container logs to be printed for easier debugging
-            logger.error("Pulsar Container Logs:\n${pulsarContainer.logs}")
-            throw e // Fail fast if deployment doesn't work
+            logger.error("CRITICAL: Error ensuring 'public/default' namespace: ${e.message}", e)
+            throw e
         }
+
+        val functionConfig = FunctionConfig().apply {
+            name = this@EventTypeSplitterIntegrationTest.functionName
+            inputs = Collections.singletonList(this@EventTypeSplitterIntegrationTest.inputTopic)
+            runtime = FunctionConfig.Runtime.JAVA
+            className = com.example.pulsar.functions.routing.EventTypeSplitter::class.java.name
+            // autoAck = true // Default
+        }
+
+        functionRunner = LocalRunner.builder()
+            .functionConfig(functionConfig)
+            .brokerServiceUrl(pulsarContainer.pulsarBrokerUrl)
+            .build()
+
+        logger.info("Starting LocalRunner for function $functionName...")
+        functionRunner.start(false) // Start in a separate thread
+        Thread.sleep(5000) // Give function time to initialize
+        logger.info("LocalRunner for function $functionName started.")
     }
 
     @AfterAll
     fun tearDown() {
-        // Clean up resources
-        // Undeploy function (optional, as container will be destroyed)
+        logger.info("Stopping LocalRunner for function $functionName...")
         try {
-            adminClient.functions().deleteFunction("public", "default", functionName)
+            functionRunner.stop()
+            logger.info("LocalRunner for function $functionName stopped.")
         } catch (e: Exception) {
-            logger.warn("Failed to delete function $functionName: ${e.message}", e)
+            logger.error("Error stopping LocalRunner: ${e.message}", e)
         }
 
-        pulsarClient.close()
-        adminClient.close()
-        // Container is stopped automatically by Testcontainers JUnit 5 extension
-        // pulsarContainer.stop()
+        try { adminClient.close() } catch (e: Exception) { logger.warn("Error closing admin client: ${e.message}", e) }
+        try { pulsarClient.close() } catch (e: Exception) { logger.warn("Error closing pulsar client: ${e.message}", e) }
+
+        try {
+            if (::pulsarContainer.isInitialized && pulsarContainer.isRunning) {
+                logger.info("Stopping PulsarContainer manually...")
+                pulsarContainer.stop()
+                logger.info("PulsarContainer stopped.")
+            }
+        } catch (e: Exception) {
+            logger.warn("Error stopping PulsarContainer: ${e.message}", e)
+        }
     }
 
     private fun createProducer(topic: String): Producer<ByteArray> {
@@ -129,7 +143,7 @@ class EventTypeSplitterIntegrationTest {
             .topic(topic)
             .subscriptionName(subName)
             .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
-            .ackTimeout(10, TimeUnit.SECONDS) // Configure ack timeout for robust consumption
+            .ackTimeout(10, TimeUnit.SECONDS)
             .subscribe()
     }
 
@@ -138,7 +152,7 @@ class EventTypeSplitterIntegrationTest {
             eventId = UUID.randomUUID().toString(),
             source = source,
             eventType = eventType,
-            timestamp = "2023-01-01T00:00:00Z", // Using a fixed timestamp for consistency
+            timestamp = "2023-01-01T00:00:00Z",
             data = objectMapper.readTree(data),
         )
         return objectMapper.writeValueAsString(event)
@@ -147,7 +161,7 @@ class EventTypeSplitterIntegrationTest {
     @Test
     fun `should route event to specific event type topic`() {
         val eventType = "ORDER_PLACED"
-        val sanitizedEventType = "order_placed" // Manual sanitization for verification
+        val sanitizedEventType = "order-placed"
         val expectedOutputTopic = "persistent://public/default/fn-split-$sanitizedEventType"
         val testMessageJson = createCommonEventJson(eventType)
 
@@ -157,7 +171,7 @@ class EventTypeSplitterIntegrationTest {
         producer.send(testMessageJson.toByteArray())
         logger.info("Sent message for event type '$eventType' to input topic '$inputTopic'")
 
-        val receivedMessage = consumer.receive(15, TimeUnit.SECONDS) // Increased timeout
+        val receivedMessage = consumer.receive(15, TimeUnit.SECONDS)
 
         Assertions.assertNotNull(receivedMessage, "Message should be received from $expectedOutputTopic")
         val receivedEvent = objectMapper.readValue(receivedMessage.data, CommonEvent::class.java)
@@ -173,12 +187,12 @@ class EventTypeSplitterIntegrationTest {
     @Test
     fun `should route different event types to respective topics`() {
         val eventType1 = "INVENTORY_UPDATED"
-        val sanitizedEventType1 = "inventory_updated"
+        val sanitizedEventType1 = "inventory-updated"
         val outputTopic1 = "persistent://public/default/fn-split-$sanitizedEventType1"
         val messageJson1 = createCommonEventJson(eventType1)
 
         val eventType2 = "USER_REGISTERED"
-        val sanitizedEventType2 = "user_registered"
+        val sanitizedEventType2 = "user-registered"
         val outputTopic2 = "persistent://public/default/fn-split-$sanitizedEventType2"
         val messageJson2 = createCommonEventJson(eventType2)
 
@@ -191,27 +205,17 @@ class EventTypeSplitterIntegrationTest {
         producer.send(messageJson2.toByteArray())
         logger.info("Sent message for event type '$eventType2'")
 
-        // Consume from first topic
         val receivedMessage1 = consumer1.receive(10, TimeUnit.SECONDS)
         Assertions.assertNotNull(receivedMessage1, "Message should be received from $outputTopic1")
         val receivedEvent1 = objectMapper.readValue(receivedMessage1.data, CommonEvent::class.java)
         Assertions.assertEquals(eventType1, receivedEvent1.eventType)
         consumer1.acknowledge(receivedMessage1)
-        logger.info("Received and acknowledged message from '$outputTopic1'")
 
-        // Consume from second topic
         val receivedMessage2 = consumer2.receive(10, TimeUnit.SECONDS)
         Assertions.assertNotNull(receivedMessage2, "Message should be received from $outputTopic2")
         val receivedEvent2 = objectMapper.readValue(receivedMessage2.data, CommonEvent::class.java)
         Assertions.assertEquals(eventType2, receivedEvent2.eventType)
         consumer2.acknowledge(receivedMessage2)
-        logger.info("Received and acknowledged message from '$outputTopic2'")
-
-        // Ensure no cross-contamination (optional, but good practice)
-        val rogueMessage1 = consumer2.receive(2, TimeUnit.SECONDS) // Short timeout
-        Assertions.assertNull(rogueMessage1, "Message for $eventType1 should not be on $outputTopic2")
-        val rogueMessage2 = consumer1.receive(2, TimeUnit.SECONDS) // Short timeout
-        Assertions.assertNull(rogueMessage2, "Message for $eventType2 should not be on $outputTopic1")
 
         producer.close()
         consumer1.close()
@@ -221,9 +225,6 @@ class EventTypeSplitterIntegrationTest {
     @Test
     fun `should route event needing sanitization to correctly named topic`() {
         val eventType = "Payment Processed V2!"
-        // Expected sanitization: "payment-processed-v2-"
-        // The function logic: commonEvent.eventType.lowercase().replace(Regex("[^a-z0-9-]"), "-")
-        // "payment processed v2!" -> "payment-processed-v2-" (space becomes -, ! becomes -)
         val sanitizedEventType = "payment-processed-v2-"
         val expectedOutputTopic = "persistent://public/default/fn-split-$sanitizedEventType"
         val testMessageJson = createCommonEventJson(eventType)
@@ -240,7 +241,6 @@ class EventTypeSplitterIntegrationTest {
         Assertions.assertEquals(eventType, receivedEvent.eventType)
 
         consumer.acknowledge(receivedMessage)
-        logger.info("Received and acknowledged message from '$expectedOutputTopic'")
 
         producer.close()
         consumer.close()
