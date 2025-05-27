@@ -1,0 +1,4 @@
+# HTTP endpoint to poll or listen on
+httpEndpoint: "http://localhost:8080/messages"
+# Polling interval in milliseconds (if applicable)
+# pollIntervalMs: 5000

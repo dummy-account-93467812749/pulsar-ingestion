@@ -71,7 +71,7 @@ class PaymentNoticeTranslator : Function<String, String> {
             }
 
             val txnId = inputJson.get("txnId").asText()
-            val timestamp = inputJson.get("time").asText() 
+            val timestamp = inputJson.get("time").asText()
 
             val eventId = UUID.randomUUID().toString()
             val source = "payment-gateway"
@@ -83,13 +83,12 @@ class PaymentNoticeTranslator : Function<String, String> {
                 source = source,
                 eventType = eventType,
                 timestamp = timestamp,
-                data = dataPayload
+                data = dataPayload,
             )
 
             val outputJson = objectMapper.writeValueAsString(commonEvent)
             log.info("Successfully transformed PaymentNotice (txnId: {}) to CommonEvent (eventId: {})", txnId, eventId)
             return outputJson
-
         } catch (e: Exception) {
             log.error("Failed to process PaymentNotice input: {}. Error: {}", input, e.message, e)
             return null

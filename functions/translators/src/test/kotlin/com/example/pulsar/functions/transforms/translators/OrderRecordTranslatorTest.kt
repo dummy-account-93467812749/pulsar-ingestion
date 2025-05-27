@@ -3,9 +3,14 @@ package com.example.pulsar.functions.transforms.translators
 import com.example.pulsar.common.CommonEvent
 import com.fasterxml.jackson.databind.node.JsonNodeFactory
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
-import io.mockk.*
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.verify
 import org.apache.pulsar.functions.api.Context
-import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.slf4j.Logger
@@ -31,10 +36,10 @@ class OrderRecordTranslatorTest {
         val placedAt = "2025-05-26T10:00:00Z"
         // Using JsonNodeFactory for items array to ensure it's valid JSON structure
         val itemsArray = JsonNodeFactory.instance.arrayNode().add("item1").add("item2")
-        
+
         val inputJsonString = "{" +
             "\"orderId\": \"$orderId\"," +
-            "\"items\": ${itemsArray.toString()}," + // Serialize itemsArray to string
+            "\"items\": $itemsArray," + // Serialize itemsArray to string
             "\"placedAt\": \"$placedAt\"" +
             "}"
 
@@ -53,7 +58,7 @@ class OrderRecordTranslatorTest {
         assertEquals(orderId, dataNode.get("orderId").asText())
         assertEquals(itemsArray, dataNode.get("items")) // Compare JsonNode directly
         assertEquals(placedAt, dataNode.get("placedAt").asText())
-        
+
         // Less strict: Check that info is logged with any message format,
         // an argument equal to orderId, and any other string argument (for eventId).
         verify { mockLogger.info(any<String>(), eq(orderId), any<String>()) }
@@ -75,7 +80,7 @@ class OrderRecordTranslatorTest {
     fun `process JSON missing required orderId field should return null and log error`() {
         val itemsArray = JsonNodeFactory.instance.arrayNode().add("item1")
         val jsonMissingField = "{" +
-            "\"items\": ${itemsArray.toString()}," +
+            "\"items\": $itemsArray," +
             "\"placedAt\": \"2025-05-26T10:00:00Z\"" +
             "}"
         val result = translator.process(jsonMissingField, mockContext)
@@ -91,7 +96,7 @@ class OrderRecordTranslatorTest {
         val itemsArray = JsonNodeFactory.instance.arrayNode().add("item1")
         val jsonMissingField = "{" +
             "\"orderId\": \"ORD-789\"," +
-            "\"items\": ${itemsArray.toString()}" +
+            "\"items\": $itemsArray" +
             "}"
         val result = translator.process(jsonMissingField, mockContext)
         assertNull(result)

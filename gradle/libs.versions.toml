@@ -1,91 +1,93 @@
 [versions]
 # Build and Language
 kotlin                 = "2.1.21"   # latest stable Kotlin
-spotless               = "7.0.3"    # com.diffplug.spotless Gradle plugin :contentReference[oaicite:0]{index=0}
-ktlint                 = "12.3.0"   # org.jlleitschuh.gradle.ktlint plugin :contentReference[oaicite:1]{index=1}
+spotless               = "7.0.3"    # com.diffplug.spotless Gradle plugin
+ktlint                 = "12.3.0"   # org.jlleitschuh.gradle.ktlint plugin
 ktlintCli              = "0.50.0"   # com.pinterest.ktlint:ktlint-cli version for Spotless
-shadow                 = "8.1.1"    # com.github.johnrengelman.shadow :contentReference[oaicite:2]{index=2}
-jib                    = "3.4.5"    # com.google.cloud.tools.jib :contentReference[oaicite:3]{index=3}
-dokka                  = "2.0.0"    # org.jetbrains.dokka :contentReference[oaicite:4]{index=4}
-benManesVersions       = "0.52.0"   # com.github.ben-manes.versions :contentReference[oaicite:5]{index=5}
+shadow                 = "8.1.1"    # com.github.johnrengelman.shadow
+jib                    = "3.4.5"    # com.google.cloud.tools.jib
+dokka                  = "2.0.0"    # org.jetbrains.dokka
+benManesVersions       = "0.52.0"   # com.github.ben-manes.versions
+jacoco                 = "0.8.12"
 
 # Core Libraries
-pulsar                 = "4.0.5"    # Apache Pulsar latest LTS :contentReference[oaicite:6]{index=6}
-jackson                = "2.17.2"   # Jackson releases :contentReference[oaicite:7]{index=7}
+pulsar                 = "4.0.5"    # Apache Pulsar latest LTS
+jackson                = "2.17.2"   # Jackson releases
 
 # Testing Frameworks & Tools
-junitJupiter           = "5.11.0"   # JUnit Jupiter :contentReference[oaicite:8]{index=8}
-testcontainers         = "1.19.8"   # Testcontainers Core :contentReference[oaicite:9]{index=9}
+junitJupiter           = "5.11.0"   # JUnit Jupiter
+testcontainers         = "1.19.8"   # Testcontainers Core
 testng                 = "7.7.1"    # TestNG testing framework
 kafkaClients           = "3.7.0"    # Apache Kafka Clients
-ktor                   = "2.3.10"   # Ktor client :contentReference[oaicite:13]{index=13}
+ktor                   = "2.3.10"   # Ktor client
 azureEventhubs         = "5.18.0"
 azureIdentity          = "1.12.0"
 azureStorageBlob       = "12.25.1"
-mockitoKotlin          = "5.4.0"    # mockito-kotlin :contentReference[oaicite:10]{index=10}
-mockk                  = "1.14.2"   # MockK :contentReference[oaicite:11]{index=11}
-# testng alias is defined below in [libraries] section
+mockitoKotlin          = "5.4.0"    # mockito-kotlin
+mockk                  = "1.14.2"   # MockK
 
 # Protobuf (required by LocalRunner)
-protobufJava           = "3.25.0"   # Protocol Buffers Java :contentReference[oaicite:12]{index=12}
+protobufJava           = "3.25.0"   # Protocol Buffers Java
 
 [libraries]
 # Pulsar APIs
-pulsar-functions-api          = { group="org.apache.pulsar", name="pulsar-functions-api",              version.ref="pulsar" }
-pulsar-functions-local-runner    = { group = "org.apache.pulsar", name  = "pulsar-functions-local-runner", version.ref = "pulsar" }
-pulsar-bom                       = { group = "org.apache.pulsar", name = "pulsar-bom",                 version.ref = "pulsar" }
-pulsar-client                    = { group = "org.apache.pulsar", name = "pulsar-client",              version.ref = "pulsar" }
-pulsar-io-core                   = { group = "org.apache.pulsar", name = "pulsar-io-core",             version.ref = "pulsar" } 
-pulsar-client-admin              = { group = "org.apache.pulsar", name = "pulsar-client-admin",      version.ref = "pulsar" }
-pulsar-client-admin-original   = { group = "org.apache.pulsar", name = "pulsar-client-admin-original", version.ref = "pulsar" }
+pulsar-functions-api               = { group="org.apache.pulsar", name="pulsar-functions-api",                version.ref="pulsar" }
+# pulsar-functions-local-runner    = { group = "org.apache.pulsar", name  = "pulsar-functions-local-runner", version.ref = "pulsar" } # SHADED - Prefer -original for tests/libs
+pulsar-functions-local-runner-original = { group = "org.apache.pulsar", name  = "pulsar-functions-local-runner-original", version.ref = "pulsar" } # ADDED - Use this for test-kit and function implementation
+pulsar-bom                       = { group = "org.apache.pulsar", name = "pulsar-bom",                   version.ref = "pulsar" }
+# pulsar-client                    = { group = "org.apache.pulsar", name = "pulsar-client",                version.ref = "pulsar" } # SHADED - Prefer -original for tests/libs
+pulsar-client-original             = { group = "org.apache.pulsar", name = "pulsar-client-original",         version.ref = "pulsar" } # ADDED - Use this for test-kit
+pulsar-io-core                   = { group = "org.apache.pulsar", name = "pulsar-io-core",               version.ref = "pulsar" }
+# pulsar-client-admin              = { group = "org.apache.pulsar", name = "pulsar-client-admin",        version.ref = "pulsar" } # SHADED - Prefer -original for tests/libs
+pulsar-client-admin-original       = { group = "org.apache.pulsar", name = "pulsar-client-admin-original", version.ref = "pulsar" } # This was already correct
 
 # Kotlin
 kotlin-stdlib-jdk8               = { module = "org.jetbrains.kotlin:kotlin-stdlib-jdk8", version.ref = "kotlin" }
-kotlin-test-junit5              = { module = "org.jetbrains.kotlin:kotlin-test-junit5",    version.ref = "kotlin" }
+kotlin-test-junit5               = { module = "org.jetbrains.kotlin:kotlin-test-junit5",    version.ref = "kotlin" }
 
 # Jackson JSON
-jackson-databind                = { group = "com.fasterxml.jackson.core",   name = "jackson-databind",     version.ref = "jackson" }
-jackson-module-kotlin           = { group = "com.fasterxml.jackson.module", name = "jackson-module-kotlin",version.ref = "jackson" }
-jackson-dataformat-yaml         = { group = "com.fasterxml.jackson.dataformat", name = "jackson-dataformat-yaml", version.ref = "jackson" }
+jackson-databind                 = { group = "com.fasterxml.jackson.core",   name = "jackson-databind",     version.ref = "jackson" }
+jackson-module-kotlin            = { group = "com.fasterxml.jackson.module", name = "jackson-module-kotlin",version.ref = "jackson" }
+jackson-dataformat-yaml          = { group = "com.fasterxml.jackson.dataformat", name = "jackson-dataformat-yaml", version.ref = "jackson" }
 
 # Testing libraries
-junit-jupiter-api               = { group = "org.junit.jupiter", name = "junit-jupiter-api", version.ref = "junitJupiter" }
-junit-jupiter-engine            = { group = "org.junit.jupiter", name = "junit-jupiter-engine",version.ref = "junitJupiter" }
-junit-jupiter                   = { group = "org.junit.jupiter", name = "junit-jupiter",       version.ref = "junitJupiter" }
-mockito-kotlin                  = { group = "org.mockito.kotlin", name = "mockito-kotlin",     version.ref = "mockitoKotlin" }
-mockk                           = { group = "io.mockk",             name = "mockk",              version.ref = "mockk" }
-testcontainers-pulsar           = { group = "org.testcontainers",   name = "pulsar",             version.ref = "testcontainers" }
-testcontainers-kafka            = { group = "org.testcontainers",   name = "kafka",              version.ref = "testcontainers" }
-testng                          = { group = "org.testng", name = "testng", version.ref = "testng" }
+junit-jupiter-api                = { group = "org.junit.jupiter", name = "junit-jupiter-api", version.ref = "junitJupiter" }
+junit-jupiter-engine             = { group = "org.junit.jupiter", name = "junit-jupiter-engine",version.ref = "junitJupiter" }
+junit-jupiter                    = { group = "org.junit.jupiter", name = "junit-jupiter",       version.ref = "junitJupiter" }
+mockito-kotlin                   = { group = "org.mockito.kotlin", name = "mockito-kotlin",     version.ref = "mockitoKotlin" }
+mockk                            = { group = "io.mockk",             name = "mockk",              version.ref = "mockk" }
+testcontainers-pulsar            = { group = "org.testcontainers",   name = "pulsar",             version.ref = "testcontainers" }
+testcontainers-kafka             = { group = "org.testcontainers",   name = "kafka",              version.ref = "testcontainers" }
+testng                           = { group = "org.testng", name = "testng", version.ref = "testng" }
 
 # Apache Kafka
-kafka-clients                   = { group = "org.apache.kafka", name = "kafka-clients", version.ref = "kafkaClients" }
+kafka-clients                    = { group = "org.apache.kafka", name = "kafka-clients", version.ref = "kafkaClients" }
 
 # Azure SDK
-azure-messaging-eventhubs       = { group = "com.azure", name = "azure-messaging-eventhubs", version.ref = "azureEventhubs" }
-azure-identity                  = { group = "com.azure", name = "azure-identity", version.ref = "azureIdentity" }
-azure-storage-blob              = { group = "com.azure", name = "azure-storage-blob", version.ref = "azureStorageBlob" }
-testcontainers-azure            = { group = "org.testcontainers", name = "azure", version.ref = "testcontainers" }
+azure-messaging-eventhubs        = { group = "com.azure", name = "azure-messaging-eventhubs", version.ref = "azureEventhubs" }
+azure-identity                   = { group = "com.azure", name = "azure-identity", version.ref = "azureIdentity" }
+azure-storage-blob               = { group = "com.azure", name = "azure-storage-blob", version.ref = "azureStorageBlob" }
+testcontainers-azure             = { group = "org.testcontainers", name = "azure", version.ref = "testcontainers" }
 
-# Protobuf (required by LocalRunner)
-protobufJava = { group = "com.google.protobuf", name = "protobuf-java", version.ref = "protobufJava" }
+# Protobuf (required by LocalRunner original)
+protobufJava                     = { group = "com.google.protobuf", name = "protobuf-java", version.ref = "protobufJava" }
 
 # Ktor client
-ktor-client-core                = { group = "io.ktor", name = "ktor-client-core", version.ref = "ktor" }
-ktor-client-cio                 = { group = "io.ktor", name = "ktor-client-cio", version.ref = "ktor" }
-ktor-client-content-negotiation = { group = "io.ktor", name = "ktor-client-content-negotiation", version.ref = "ktor" }
-ktor-serialization-kotlinx-json = { group = "io.ktor", name = "ktor-serialization-kotlinx-json", version.ref = "ktor" } # Also for server if using kotlinx
-ktor-client-mock                = { group = "io.ktor", name = "ktor-client-mock", version.ref = "ktor" }
+ktor-client-core                 = { group = "io.ktor", name = "ktor-client-core", version.ref = "ktor" }
+ktor-client-cio                  = { group = "io.ktor", name = "ktor-client-cio", version.ref = "ktor" }
+ktor-client-content-negotiation  = { group = "io.ktor", name = "ktor-client-content-negotiation", version.ref = "ktor" }
+ktor-serialization-kotlinx-json  = { group = "io.ktor", name = "ktor-serialization-kotlinx-json", version.ref = "ktor" } # Also for server if using kotlinx
+ktor-client-mock                 = { group = "io.ktor", name = "ktor-client-mock", version.ref = "ktor" }
 # Ktor server for integration tests
-ktor-server-core                = { group = "io.ktor", name = "ktor-server-core", version.ref = "ktor" }
-ktor-server-netty               = { group = "io.ktor", name = "ktor-server-netty", version.ref = "ktor" }
-ktor-server-content-negotiation = { group = "io.ktor", name = "ktor-server-content-negotiation", version.ref = "ktor" }
+ktor-server-core                 = { group = "io.ktor", name = "ktor-server-core", version.ref = "ktor" }
+ktor-server-netty                = { group = "io.ktor", name = "ktor-server-netty", version.ref = "ktor" }
+ktor-server-content-negotiation  = { group = "io.ktor", name = "ktor-server-content-negotiation", version.ref = "ktor" }
 
 
 [plugins]
-kotlin-jvm                      = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
-shadow                          = { id = "com.github.johnrengelman.shadow", version.ref = "shadow" }
-jib                             = { id = "com.google.cloud.tools.jib", version.ref = "jib" }
-dokka                           = { id = "org.jetbrains.dokka", version.ref = "dokka" }
-spotless                        = { id = "com.diffplug.spotless", version.ref = "spotless" }
-ben-manes-versions              = { id = "com.github.ben-manes.versions", version.ref = "benManesVersions" }
+kotlin-jvm                       = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+shadow                           = { id = "com.github.johnrengelman.shadow", version.ref = "shadow" }
+jib                              = { id = "com.google.cloud.tools.jib", version.ref = "jib" }
+dokka                            = { id = "org.jetbrains.dokka", version.ref = "dokka" }
+spotless                         = { id = "com.diffplug.spotless", version.ref = "spotless" }
+ben-manes-versions               = { id = "com.github.ben-manes.versions", version.ref = "benManesVersions" }

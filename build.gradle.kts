@@ -16,15 +16,20 @@ plugins {
     id("jacoco")
 }
 
+// Configure JaCoCo plugin globally
+jacoco {
+    toolVersion = libs.versions.jacoco.get()
+}
+
 subprojects {
     apply(plugin = "org.jetbrains.kotlin.jvm")
-    apply(plugin = "jacoco")
+    apply(plugin = "jacoco") // JaCoCo plugin applied to each subproject
     apply(plugin = "com.diffplug.spotless")
 
     group = "com.acme.pulsar"
     version = "0.1.0-SNAPSHOT"
 
-    plugins.withId("java") {
+    plugins.withId("java") { // This ensures the configuration runs after 'java' (or 'kotlin.jvm' which applies 'java') is applied
         val sourceSets = extensions.getByType<SourceSetContainer>()
         val integrationTest by sourceSets.creating {
             compileClasspath += sourceSets.getByName("main").output
@@ -42,19 +47,24 @@ subprojects {
             classpath = integrationTest.runtimeClasspath
             shouldRunAfter(tasks.named("test"))
             useJUnitPlatform()
-            configure<JacocoTaskExtension> {}
+            // The JacocoTaskExtension is automatically added by the jacoco plugin.
+            // If you need to configure it specifically for this task, you can do so here.
+            // For just enabling it, the plugin being applied is enough.
+            // The toolVersion is set globally.
+            // configure<JacocoTaskExtension> {} // This is often not needed if defaults are fine
         }
     }
 
     tasks.withType<Test>().configureEach {
         useJUnitPlatform()
-        configure<JacocoTaskExtension> {}
+        // The JacocoTaskExtension is automatically added by the jacoco plugin.
+        // The toolVersion is set globally.
+        // configure<JacocoTaskExtension> {} // This is often not needed if defaults are fine
     }
 
     configure<com.diffplug.gradle.spotless.SpotlessExtension> {
         kotlin {
-            ktlint(libs.versions.ktlintCli.get()) // Corrected to use ktlintCli
-            //ktlint(libs.versions.ktlint.get())
+            ktlint(libs.versions.ktlintCli.get())
         }
     }
 
@@ -69,18 +79,7 @@ subprojects {
 tasks.register("ciFast") {
     group = "verification"
     description = "Runs Spotless checks and builds (including unit tests)."
-
-    // 'build' task usually depends on 'check', and 'spotlessCheck' is part of 'check'.
-    // So, depending on 'build' should trigger 'spotlessCheck' appropriately.
     dependsOn("build")
-
-    // If you need to ensure 'spotlessCheck' is explicitly in the graph and build runs after it,
-    // this is more robust if the above assumption isn't true for your setup:
-    // dependsOn("spotlessCheck") // Ensure spotlessCheck is considered
-    // tasks.named("build").configure {
-    //     mustRunAfter("spotlessCheck")
-    // }
-    // dependsOn(tasks.named("build")) // Then ciFast depends on build
 }
 
 tasks.register("ciFull") {
@@ -89,8 +88,7 @@ tasks.register("ciFull") {
     dependsOn("build")
 
     gradle.taskGraph.whenReady(closureOf<TaskExecutionGraph> {
-        // 'this' inside closureOf refers to the TaskExecutionGraph instance
-        if (this.hasTask(this@register.path)) { // 'this@register' refers to the 'ciFull' task being registered.
+        if (this.hasTask(this@register.path)) {
             val integrationTestTasks = subprojects.flatMap { subproject ->
                 subproject.tasks.withType<Test>().filter { it.name == "integrationTest" }
             }
@@ -105,25 +103,34 @@ tasks.register("ciFull") {
 tasks.register<JacocoReport>("coverageReport") {
     group = "reporting"
     description = "Generates a combined JaCoCo coverage report for all subprojects."
+
+    // Ensure this task runs after all relevant test tasks have completed
     val allTestTasks = subprojects.flatMap { subproject ->
         subproject.tasks.withType<Test>().matching { it.name == "test" || it.name == "integrationTest" }
     }
     dependsOn(allTestTasks)
+
+    // Collect execution data from all test tasks
     executionData.from(files(allTestTasks.mapNotNull { testTask ->
+        // Access the JacocoTaskExtension for each test task
         testTask.extensions.findByType(JacocoTaskExtension::class.java)?.destinationFile
-            ?.takeIf { it.exists() }
+            ?.takeIf { it.exists() } // Only include if the file exists
     }))
+
+    // Collect source directories from all subprojects' main source sets
     val mainSourceSets = subprojects.mapNotNull { subproject ->
         subproject.extensions.findByType(SourceSetContainer::class.java)
             ?.findByName(SourceSet.MAIN_SOURCE_SET_NAME)
     }
     sourceDirectories.from(files(mainSourceSets.map { it.allSource.srcDirs }).filter { it.exists() })
     classDirectories.from(files(mainSourceSets.map { it.output.classesDirs }).filter { it.exists() })
+
     reports {
         xml.required.set(true)
         html.required.set(true)
         csv.required.set(false)
     }
+
     doLast {
         if (executionData.files.isEmpty()) {
             logger.warn("No JaCoCo execution data files found. Coverage report will be empty.")
@@ -142,44 +149,41 @@ tasks.register("generateManifests") {
     description = "Generates functionmesh-pipeline.yaml using Helm with absolute chart path from project root."
 
     val buildLayout = project.layout
-    val deployDirProperty = buildLayout.buildDirectory.dir("deploy") // DirectoryProperty
-    val chartDirFile = project.file("deployment/helm") // File object for chart directory
-    val valuesFile = project.file("deployment/pipeline.yaml") // File object for values file
+    val deployDirProperty = buildLayout.buildDirectory.dir("deploy")
+    val chartDirFile = project.file("deployment/helm")
+    val valuesFile = project.file("deployment/pipeline.yaml")
 
-    // Define the output file property using DirectoryProperty.file()
     val functionMeshOutputProperty = deployDirProperty.get().file("functionmesh-pipeline.yaml")
-    outputs.file(functionMeshOutputProperty) // Declare this as an output
+    outputs.file(functionMeshOutputProperty)
 
     doFirst {
-        deployDirProperty.get().asFile.mkdirs() // Ensure build/deploy directory exists
+        deployDirProperty.get().asFile.mkdirs()
     }
 
     doLast {
-        println("--- Attempting to Generate functionmesh-pipeline.yaml ---")
+        // println("--- Attempting to Generate functionmesh-pipeline.yaml ---") // Removed for cleaner output
         project.exec {
-            // workingDir is not set, defaults to project.projectDir (root of the project)
             executable("helm")
             args(
                 "template",
-                "my-test-release",                            // 1. Arbitrary release NAME.
-                chartDirFile.absolutePath,                    // 2. ABSOLUTE PATH for the CHART location.
-                "--show-only", "templates/mesh/function-mesh.yaml", // Path relative to chartDirFile
-                "--values", valuesFile.absolutePath           // Absolute path for values file
+                "my-test-release",
+                chartDirFile.absolutePath,
+                "--show-only", "templates/mesh/function-mesh.yaml",
+                "--values", valuesFile.absolutePath
             )
-            standardOutput = functionMeshOutputProperty.asFile.outputStream() 
-            isIgnoreExitValue = false // Fail on error as per instruction
+            standardOutput = functionMeshOutputProperty.asFile.outputStream()
+            isIgnoreExitValue = false
         }
-        
-        val generatedFile = functionMeshOutputProperty.asFile 
-        if (generatedFile.exists() && generatedFile.length() > 0) {
-            println("--- functionmesh-pipeline.yaml was generated successfully. ---")
-            // Content will be read by the agent if successful
-        } else if (generatedFile.exists()) {
-            println("--- functionmesh-pipeline.yaml was generated but is empty. ---")
-        } else {
-            println("--- functionmesh-pipeline.yaml was NOT generated. ---")
-        }
-        println("--- generateManifests task finished ---")
+
+        val generatedFile = functionMeshOutputProperty.asFile
+        // if (generatedFile.exists() && generatedFile.length() > 0) { // Removed for cleaner output
+        //     println("--- functionmesh-pipeline.yaml was generated successfully. ---")
+        // } else if (generatedFile.exists()) {
+        //     println("--- functionmesh-pipeline.yaml was generated but is empty. ---")
+        // } else {
+        //     println("--- functionmesh-pipeline.yaml was NOT generated. ---")
+        // }
+        // println("--- generateManifests task finished ---") // Removed for cleaner output
     }
 }
 
@@ -187,16 +191,16 @@ tasks.register<Exec>("composeUp") {
     group = "sandbox"
     description = "Starts local development environment using Docker Compose."
     dependsOn(tasks.named("generateManifests"))
-    workingDir = project.file("deployment/local-dev") // Use project.file for File objects
+    workingDir = project.file("deployment/local-dev")
     commandLine("docker", "compose", "up", "-d")
 }
 
 tasks.register<Exec>("composeDown") {
     group = "sandbox"
     description = "Stops local development environment and removes containers/volumes."
-    workingDir = project.file("deployment/local-dev") // Use project.file for File objects
+    workingDir = project.file("deployment/local-dev")
     commandLine("docker", "compose", "down", "--volumes")
-} // This was the missing brace
+}
 
 tasks.register<Exec>("loadTest") {
     group = "sandbox"

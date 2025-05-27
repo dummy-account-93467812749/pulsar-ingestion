@@ -3,6 +3,7 @@ package com.example.pulsar.functions.routing
 import com.example.pulsar.common.CommonEvent
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import org.apache.pulsar.client.api.Schema
 import org.apache.pulsar.functions.api.Context
 import org.apache.pulsar.functions.api.Function
 import org.slf4j.Logger
@@ -19,7 +20,6 @@ class EventTypeSplitter : Function<String, Void> {
     override fun process(input: String?, context: Context?): Void? {
         // Ensure context and logger are available
         if (context == null) {
-            // This case should ideally not happen if deployed in a Pulsar environment
             println("Error: Context is null. Cannot initialize logger or process message.")
             return null
         }
@@ -43,22 +43,26 @@ class EventTypeSplitter : Function<String, Void> {
 
         log.info("Successfully deserialized eventId: {}, eventType: {}", commonEvent.eventId, commonEvent.eventType)
 
-        // Sanitize eventType for use in topic names: lowercase and replace non-alphanumeric with hyphens
-        val sanitizedEventType = commonEvent.eventType.lowercase().replace(Regex("[^a-z0-9-]"), "-")
-        
+        // Sanitize eventType for use in topic names: lowercase and replace any non-alphanumeric with hyphens
+        val sanitizedEventType = commonEvent.eventType
+            .lowercase()
+            .replace(Regex("[^a-z0-9]"), "-")
+
         // Construct target topic name
-        // Assuming a default tenant 'public' and namespace 'default' for routed topics.
-        // This could be made configurable via userConfig if needed.
-        val targetTopic = "persistent://public/default/fn-split-${sanitizedEventType}"
+        val targetTopic = "persistent://public/default/fn-split-$sanitizedEventType"
 
         try {
-            // Send the original input string to the target topic
-            context.newOutputMessage(targetTopic, input.toByteArray()) // Send as byte array
-                .sendAsync() 
-            // Note: The original plan mentioned .value(input) which is for schema-based messages.
-            // For arbitrary JSON strings passed as String/byte[], just pass the payload directly.
+            // Asynchronously send the original JSON payload
+            context.newOutputMessage(targetTopic, Schema.BYTES)
+                .value(input.toByteArray())
+                .sendAsync()
 
-            log.info("Routed eventId: {} (type: {}) to topic: {}", commonEvent.eventId, commonEvent.eventType, targetTopic)
+            log.info(
+                "Routed eventId: {} (type: {}) to topic: {}",
+                commonEvent.eventId,
+                commonEvent.eventType,
+                targetTopic,
+            )
         } catch (e: Exception) {
             log.error(
                 "Failed to send message for eventId: {} (type: {}) to topic: {}. Error: {}",
@@ -66,12 +70,10 @@ class EventTypeSplitter : Function<String, Void> {
                 commonEvent.eventType,
                 targetTopic,
                 e.message,
-                e
+                e,
             )
-            // Depending on desired error handling, you might throw an exception or simply log and move on.
-            // For now, just log.
         }
 
-        return null // Return type is Void
+        return null
     }
 }

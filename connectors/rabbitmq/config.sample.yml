@@ -1,0 +1,11 @@
+# RabbitMQ connection URI or individual parameters
+connectionName: "pulsar-rabbitmq-source"
+host: "localhost"
+port: 5672
+virtualHost: "/"
+# Credentials will be injected via secretKeys
+# username: "${RABBITMQ_USERNAME}"
+# password: "${RABBITMQ_PASSWORD}"
+queueName: "your-rabbitmq-queue"
+# Optional: prefetchCount, etc.
+# prefetchCount: 10

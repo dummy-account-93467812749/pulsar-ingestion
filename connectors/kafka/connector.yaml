@@ -1,0 +1,9 @@
+name: kafka 
+type: source
+# image: field is intentionally omitted for native built-in connectors
+# Pulsar uses its own runtime for these. The 'type' field (or a className if needed)
+# is usually sufficient for Pulsar to find the native connector.
+topic: persistent://public/default/kafka-topic 
+configFile: config.sample.yml
+secretKeys: ["KAFKA_BROKERS_SASL_JAAS_CONFIG"] 
+parallelism: 1

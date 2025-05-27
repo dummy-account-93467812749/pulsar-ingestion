@@ -79,7 +79,7 @@ class ShipmentStatusTranslator : Function<String, String> {
 
             val eventId = UUID.randomUUID().toString()
             val source = "shipping-service"
-            val eventType = "SHIPMENT_EVENT" 
+            val eventType = "SHIPMENT_EVENT"
             val dataPayload: JsonNode = inputJson
 
             val commonEvent = CommonEvent(
@@ -87,13 +87,12 @@ class ShipmentStatusTranslator : Function<String, String> {
                 source = source,
                 eventType = eventType,
                 timestamp = timestamp,
-                data = dataPayload
+                data = dataPayload,
             )
 
             val outputJson = objectMapper.writeValueAsString(commonEvent)
             log.info("Successfully transformed ShipmentStatus (shipId: {}) to CommonEvent (eventId: {})", shipId, eventId)
             return outputJson
-
         } catch (e: Exception) {
             log.error("Failed to process ShipmentStatus input: {}. Error: {}", input, e.message, e)
             return null

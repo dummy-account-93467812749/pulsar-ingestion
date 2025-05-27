@@ -86,13 +86,12 @@ class UserProfileTranslator : Function<String, String> {
                 source = source,
                 eventType = eventType,
                 timestamp = timestamp,
-                data = dataPayload
+                data = dataPayload,
             )
 
             val outputJson = objectMapper.writeValueAsString(commonEvent)
             log.info("Successfully transformed UserProfile (uid: {}) to CommonEvent (eventId: {})", userId, eventId)
             return outputJson
-
         } catch (e: Exception) {
             log.error("Failed to process UserProfile input: {}. Error: {}", input, e.message, e)
             return null
