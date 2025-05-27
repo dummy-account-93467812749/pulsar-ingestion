@@ -5,7 +5,7 @@ plugins {
 dependencies {
     implementation(platform(libs.pulsar.bom))
     implementation(libs.pulsar.io.core)
-    implementation(libs.pulsar.client) // For PulsarClient, ConsumerBuilder etc.
+    implementation(libs.pulsar.client.original) // For PulsarClient, ConsumerBuilder etc.
 
     // Jackson for YAML/JSON configuration
     implementation(libs.jackson.databind)

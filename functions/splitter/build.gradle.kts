@@ -17,7 +17,7 @@ dependencies {
 
     integrationTestImplementation(project(":test-kit"))
     integrationTestImplementation(libs.testcontainers.pulsar)
-    integrationTestImplementation(libs.pulsar.functions.local.runner)
+    integrationTestImplementation(libs.pulsar.functions.local.runner.original)
 }
 
 tasks.shadowJar {

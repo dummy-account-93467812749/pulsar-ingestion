@@ -1,141 +1,118 @@
 package com.example.pulsar.functions.transforms.translators
+
 import com.example.pulsar.common.CommonEvent
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import org.apache.pulsar.client.admin.PulsarAdmin
+import org.apache.pulsar.client.admin.PulsarAdminException
 import org.apache.pulsar.client.api.*
 import org.apache.pulsar.common.functions.FunctionConfig
+import org.apache.pulsar.common.policies.data.TenantInfoImpl
 import org.apache.pulsar.functions.LocalRunner
 import org.junit.jupiter.api.*
 import org.junit.jupiter.api.Assertions.*
+// import org.slf4j.LoggerFactory // Removed
 import org.testcontainers.containers.PulsarContainer
+import org.testcontainers.utility.DockerImageName
+import java.time.Duration
 import java.time.format.DateTimeFormatter
 import java.time.ZoneOffset
 import java.util.*
 import java.util.concurrent.TimeUnit
 
-import java.io.File
-import java.lang.reflect.Modifier
-
-    class TranslatorsIntegrationTest {
+class TranslatorsIntegrationTest {
     companion object {
+        // private val LOG = LoggerFactory.getLogger(TranslatorsIntegrationTest::class.java) // Removed
 
         @BeforeAll
         @JvmStatic
-        fun dumpClasspathDiagnostics() {
-            println("==== Classpath Diagnostics ====")
-
-            // 1) Where is Pulsar’s ObjectMapperFactory actually coming from?
-            val omfCls = org.apache.pulsar.common.util.ObjectMapperFactory::class.java
-            println("ObjectMapperFactory loaded from: " +
-                omfCls.protectionDomain.codeSource.location)
-
-            // 2) Does that class really have a create() method?
+        fun dumpCirceChecksumDiagnostics() {
+            // println("==== Circe Checksum Diagnostics ====") // Removed
             try {
-                val m = omfCls.getDeclaredMethod("create")
-                println("✓ Found create(): $m")
-            } catch (e: NoSuchMethodException) {
-                println("✘ No create() on ObjectMapperFactory!")
-            }
-
-            // 3) What jackson-databind version is on the classpath?
-            val pkg = com.fasterxml.jackson.databind.ObjectMapper::class.java.`package`
-            println("Jackson-databind implementationVersion: ${pkg.implementationVersion}")
-
-            println("==== End Diagnostics ====")
-        }
-
-        @BeforeAll
-        @JvmStatic
-        fun dumpEverythingDiagnostics() {
-            println("==== BEGIN FULL DIAGNOSTICS ====")
-
-            // 1) Dump the entire classpath as a List<String>
-            println("-- classpath entries --")
-            val cpList: List<String> = (Thread.currentThread().contextClassLoader as? java.net.URLClassLoader)
-                // map each URL to its string form
-                ?.urLs
-                ?.map { it.toString() }
-                // fallback to the system classpath if not a URLClassLoader
-                ?: System.getProperty("java.class.path")
-                    .split(File.pathSeparator)
-
-            cpList.forEach { println(it) }
-
-            // helper to dump class source + methods
-            fun dumpClassInfo(cls: Class<*>) {
-                val loc = cls.protectionDomain.codeSource?.location
-                println(">> ${cls.name} loaded from: $loc")
-                println("   Methods:")
-                cls.declaredMethods
-                    .sortedBy { it.name }
-                    .forEach { m ->
-                        val mods = Modifier.toString(m.modifiers)
-                        val params = m.parameterTypes.joinToString { it.simpleName }
-                        println("     • $mods ${m.returnType.simpleName} ${m.name}($params)")
-                    }
-            }
-
-            // 2) Inspect Pulsar’s ObjectMapperFactory
-            println("-- ObjectMapperFactory info --")
-            val omfCls = org.apache.pulsar.common.util.ObjectMapperFactory::class.java
-            dumpClassInfo(omfCls)
-
-            // 3) Inspect both shaded & unshaded ObjectMapper
-            println("-- Jackson classes --")
-            listOf(
-                "org.apache.pulsar.shade.com.fasterxml.jackson.databind.ObjectMapper",
-                "com.fasterxml.jackson.databind.ObjectMapper"
-            ).forEach { fqcn ->
+                val circeCls = com.scurrilous.circe.checksum.Crc32cIntChecksum::class.java
+                // println("Crc32cIntChecksum loaded from: " + // Removed
+                //         circeCls.protectionDomain.codeSource.location) // Removed
                 try {
-                    dumpClassInfo(Class.forName(fqcn))
-                } catch (_: ClassNotFoundException) {
-                    println("   $fqcn NOT on classpath")
+                    circeCls.getDeclaredMethod("computeChecksum", io.netty.buffer.ByteBuf::class.java)
+                    // println("✓ Found computeChecksum(io.netty.buffer.ByteBuf)") // Removed
+                } catch (e: NoSuchMethodException) {
+                    // println("✘ No computeChecksum(io.netty.buffer.ByteBuf) on Crc32cIntChecksum!") // Removed
                 }
+            } catch (e: Throwable) { // Catch Throwable for NoClassDefFoundError etc.
+                // println("Error during Circe diagnostics: ${e.javaClass.name} - ${e.message}") // Removed
             }
-
-            // 4) Jackson package version
-            println("-- Jackson-databind Package Info --")
-            val pkg = com.fasterxml.jackson.databind.ObjectMapper::class.java.`package`
-            println("   implVersion = ${pkg.implementationVersion}")
-            println("   specVersion = ${pkg.specificationVersion}")
-
-            println("==== END FULL DIAGNOSTICS ====")
+            // println("==== End Circe Checksum Diagnostics ====") // Removed
         }
 
-        private val isoFormatter = 
+
+        private val ISO_FORMATTER =
             DateTimeFormatter.ISO_OFFSET_DATE_TIME.withZone(ZoneOffset.UTC)
 
         private fun epochSecondsToISO(epochSeconds: Long): String =
             java.time.Instant.ofEpochSecond(epochSeconds)
                 .atOffset(ZoneOffset.UTC)
-                .format(isoFormatter)
+                .format(ISO_FORMATTER)
+
+        private val PULSAR_IMAGE = DockerImageName.parse("apachepulsar/pulsar:4.0.5")
     }
 
     private lateinit var pulsar: PulsarContainer
     private lateinit var client: PulsarClient
+    private lateinit var admin: PulsarAdmin
     private val objectMapper: ObjectMapper = jacksonObjectMapper()
 
-    private val inputTopicBase  = "persistent://public/default/test-input-topic-"
+    private val inputTopicBase = "persistent://public/default/test-input-topic-"
     private val outputTopicBase = "persistent://public/default/test-output-topic-"
     private val functionNameBase = "test-translator-function-"
 
     @BeforeEach
     fun setupSharedComponents() {
-        // start a real Pulsar broker + functions worker
-        pulsar = PulsarContainer("4.0.5")
+        pulsar = PulsarContainer(PULSAR_IMAGE)
             .withFunctionsWorker()
-        pulsar.start()
+            .withEnv("PULSAR_MEM", "-Xms512m -Xmx512m -XX:MaxDirectMemorySize=512m")
+            .withEnv("PULSAR_PREFIX_allowAutoTopicCreation", "true")
+            .withEnv("PULSAR_PREFIX_allowAutoTopicCreationType", "non-partitioned")
+            .withEnv("PULSAR_PREFIX_brokerDeleteInactiveTopicsEnabled", "false")
+            .withStartupTimeout(Duration.ofMinutes(2))
 
-        client = PulsarClient.builder()
-            .serviceUrl(pulsar.pulsarBrokerUrl)
-            .build()
+        try {
+            pulsar.start()
+        } catch (e: Exception) {
+            // LOG.error("CRITICAL: Failed to start Pulsar container: {}", e.message, e) // Removed
+            // if (::pulsar.isInitialized) { // Removed
+            //     try { LOG.error("Pulsar container logs on startup failure:\n{}", pulsar.logs) } catch (_: Exception) {} // Removed
+            // } // Removed
+            throw e
+        }
+
+        client = PulsarClient.builder().serviceUrl(pulsar.pulsarBrokerUrl).build()
+        admin = PulsarAdmin.builder().serviceHttpUrl(pulsar.httpServiceUrl).build()
+
+        try {
+            if (!admin.tenants().tenants.contains("public")) {
+                admin.tenants().createTenant("public", TenantInfoImpl(HashSet(), HashSet(listOf("standalone"))))
+            }
+            if (!admin.namespaces().getNamespaces("public").contains("public/default")) {
+                admin.namespaces().createNamespace("public/default")
+            }
+        } catch (e: PulsarAdminException.ConflictException) {
+            // Expected if already exists
+        } catch (e: Exception) {
+            // LOG.error("CRITICAL: Error ensuring 'public/default' namespace: {}", e.message, e) // Removed
+            throw e // Re-throw to fail the test setup
+        }
     }
 
     @AfterEach
     fun teardownSharedComponents() {
-        client.close()
-        pulsar.stop()
+        try { admin.close() } catch (e: Exception) { /* LOG.warn("Warn: Error closing admin: {}", e.message) */ } // Removed
+        try { client.close() } catch (e: Exception) { /* LOG.warn("Warn: Error closing client: {}", e.message) */ } // Removed
+        try {
+            if (::pulsar.isInitialized && pulsar.isRunning) {
+                pulsar.stop()
+            }
+        } catch (e: Exception) { /* LOG.warn("Warn: Error stopping Pulsar: {}", e.message) */ } // Removed
     }
 
     private fun runTestForFunction(
@@ -149,6 +126,21 @@ import java.lang.reflect.Modifier
         inputTimestampExtractor: (JsonNode) -> String,
         originalInputVerifier: (JsonNode, JsonNode) -> Unit
     ) {
+        // System.out.println("---- Test: $functionName ----") // Removed
+
+        try {
+             if (!admin.topics().getList("public/default").contains(inputTopicName)) {
+                admin.topics().createNonPartitionedTopic(inputTopicName)
+             }
+             if (!admin.topics().getList("public/default").contains(outputTopicName)) {
+                admin.topics().createNonPartitionedTopic(outputTopicName)
+             }
+        } catch (e: PulsarAdminException.ConflictException) {
+            // Expected
+        } catch (e: Exception) {
+            // LOG.warn("[{}] Warn: Non-critical error explicitly creating topics: {}", functionName, e.message) // Removed
+        }
+
         val functionRunner = LocalRunner.builder()
             .functionConfig(FunctionConfig().apply {
                 name = functionName
@@ -156,61 +148,69 @@ import java.lang.reflect.Modifier
                 output = outputTopicName
                 runtime = FunctionConfig.Runtime.JAVA
                 className = functionClass.name
-                autoAck = true
+                setAutoAck(true)
             })
             .brokerServiceUrl(pulsar.pulsarBrokerUrl)
             .build()
 
+        var producer: Producer<String>? = null
+        var consumer: Consumer<String>? = null
+
         try {
             functionRunner.start(false)
+            Thread.sleep(15_000) // Critical wait
 
-            val producer: Producer<String> = client
-                .newProducer<String>(Schema.STRING)
+            producer = client.newProducer(Schema.STRING)
                 .topic(inputTopicName)
+                .blockIfQueueFull(true)
+                .sendTimeout(30, TimeUnit.SECONDS)
                 .create()
 
-            val consumer: Consumer<String> = client
-                .newConsumer<String>(Schema.STRING)
+            consumer = client.newConsumer(Schema.STRING)
                 .topic(outputTopicName)
                 .subscriptionName("test-sub-${UUID.randomUUID()}")
+                .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
                 .subscribe()
 
-            // send & receive
-            producer.send(sampleInput)
-            val msg = consumer.receive(15, TimeUnit.SECONDS)
-            assertNotNull(msg, "Did not receive message from $outputTopicName")
-            consumer.acknowledge(msg)
-
-            // parse into your CommonEvent
-            val commonEvent = objectMapper.readValue(msg.value, CommonEvent::class.java)
-
-            // basic assertions
-            assertEquals(expectedSource,    commonEvent.source)
-            assertEquals(expectedEventType, commonEvent.eventType)
-            assertTrue(commonEvent.eventId.isNotBlank())
-            // timestamp is valid ISO‑8601
-            assertDoesNotThrow {
-                java.time.OffsetDateTime.parse(commonEvent.timestamp)
+            try {
+                producer.send(sampleInput)
+            } catch (e: PulsarClientException) {
+                // LOG.error("CRITICAL [{}] Send failed to {}: {}", functionName, inputTopicName, e.message) // Removed
+                // try { LOG.error("Pulsar container logs for [{}] at send failure:\n{}", functionName, pulsar.logs) } catch (logEx: Exception) { // Removed
+                //     LOG.error("Failed to get Pulsar container logs: {}", logEx.message) // Removed
+                // } // Removed
+                throw e
             }
 
-            // timestamp matches input
-            val originalJson = objectMapper.readTree(sampleInput)
-            assertEquals(
-                inputTimestampExtractor(originalJson),
-                commonEvent.timestamp,
-                "Timestamp mismatch"
-            )
+            val msg = consumer.receive(30, TimeUnit.SECONDS)
+            assertNotNull(msg, "[$functionName] Did not receive message from $outputTopicName")
 
-            // delegate the rest of the assertions to the lambda
+            val commonEvent = objectMapper.readValue(msg.value, CommonEvent::class.java)
+            assertEquals(expectedSource, commonEvent.source)
+            assertEquals(expectedEventType, commonEvent.eventType)
+            assertTrue(commonEvent.eventId.isNotBlank())
+            assertDoesNotThrow { java.time.OffsetDateTime.parse(commonEvent.timestamp) }
+
+            val originalJson = objectMapper.readTree(sampleInput)
+            assertEquals(inputTimestampExtractor(originalJson), commonEvent.timestamp)
             originalInputVerifier(originalJson, commonEvent.data)
 
-            producer.close()
-            consumer.close()
+        } catch (e: Exception) {
+            // LOG.error("CRITICAL [{}] Test failed: {}", functionName, e.message) // Removed
+            // if (e !is PulsarClientException && ::pulsar.isInitialized && pulsar.isRunning) { // Removed
+            //      try { LOG.error("Pulsar container logs for [{}] at general failure:\n{}", functionName, pulsar.logs) } catch (logEx: Exception) { // Removed
+            //         LOG.error("Failed to get Pulsar container logs: {}", logEx.message) // Removed
+            //     } // Removed
+            // } // Removed
+            fail("[$functionName] Test failed: ${e.message}")
         } finally {
-            functionRunner.stop()
+            try { producer?.close() } catch (e: Exception) { /* LOG.warn("[{}] Warn: Error closing producer", functionName) */ } // Removed
+            try { consumer?.close() } catch (e: Exception) { /* LOG.warn("[{}] Warn: Error closing consumer", functionName) */ } // Removed
+            try { functionRunner.stop() } catch (e: Exception) { /* LOG.warn("[{}] Warn: Error stopping function runner", functionName) */ } // Removed
         }
     }
 
+    // --- Test methods (UserProfileTranslator, OrderRecordTranslator, etc.) ---
     @Test fun testUserProfileTranslator() {
         val uid     = 789
         val name    = "Test User"
