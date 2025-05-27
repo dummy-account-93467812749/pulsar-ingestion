@@ -70,6 +70,7 @@ class InventoryUpdateTranslator : Function<String, String> {
             val inputJson = objectMapper.readTree(input)
 
             if (!inputJson.has("sku") || !inputJson.has("updateTime")) {
+                
                 log.error("Missing required fields 'sku' or 'updateTime' in InventoryUpdate input: {}", input)
                 return null
             }
