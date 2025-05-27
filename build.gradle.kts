@@ -137,25 +137,72 @@ tasks.register<JacocoReport>("coverageReport") {
     }
 }
 
+tasks.register("generateManifests") {
+    group = "generation"
+    description = "Generates functionmesh-pipeline.yaml using Helm with absolute chart path from project root."
+
+    val buildLayout = project.layout
+    val deployDirProperty = buildLayout.buildDirectory.dir("deploy") // DirectoryProperty
+    val chartDirFile = project.file("deployment/helm") // File object for chart directory
+    val valuesFile = project.file("deployment/pipeline.yaml") // File object for values file
+
+    // Define the output file property using DirectoryProperty.file()
+    val functionMeshOutputProperty = deployDirProperty.get().file("functionmesh-pipeline.yaml")
+    outputs.file(functionMeshOutputProperty) // Declare this as an output
+
+    doFirst {
+        deployDirProperty.get().asFile.mkdirs() // Ensure build/deploy directory exists
+    }
+
+    doLast {
+        println("--- Attempting to Generate functionmesh-pipeline.yaml ---")
+        project.exec {
+            // workingDir is not set, defaults to project.projectDir (root of the project)
+            executable("helm")
+            args(
+                "template",
+                "my-test-release",                            // 1. Arbitrary release NAME.
+                chartDirFile.absolutePath,                    // 2. ABSOLUTE PATH for the CHART location.
+                "--show-only", "templates/mesh/function-mesh.yaml", // Path relative to chartDirFile
+                "--values", valuesFile.absolutePath           // Absolute path for values file
+            )
+            standardOutput = functionMeshOutputProperty.asFile.outputStream() 
+            isIgnoreExitValue = false // Fail on error as per instruction
+        }
+        
+        val generatedFile = functionMeshOutputProperty.asFile 
+        if (generatedFile.exists() && generatedFile.length() > 0) {
+            println("--- functionmesh-pipeline.yaml was generated successfully. ---")
+            // Content will be read by the agent if successful
+        } else if (generatedFile.exists()) {
+            println("--- functionmesh-pipeline.yaml was generated but is empty. ---")
+        } else {
+            println("--- functionmesh-pipeline.yaml was NOT generated. ---")
+        }
+        println("--- generateManifests task finished ---")
+    }
+}
+
 tasks.register<Exec>("composeUp") {
     group = "sandbox"
     description = "Starts local development environment using Docker Compose."
-    workingDir = file("local-dev")
+    dependsOn(tasks.named("generateManifests"))
+    workingDir = project.file("deployment/local-dev") // Use project.file for File objects
     commandLine("docker", "compose", "up", "-d")
 }
 
 tasks.register<Exec>("composeDown") {
     group = "sandbox"
     description = "Stops local development environment and removes containers/volumes."
-    workingDir = file("local-dev")
+    workingDir = project.file("deployment/local-dev") // Use project.file for File objects
     commandLine("docker", "compose", "down", "--volumes")
-}
+} // This was the missing brace
 
 tasks.register<Exec>("loadTest") {
     group = "sandbox"
     description = "Runs a load test against the local development environment."
     dependsOn("composeUp")
     val loadTestRateProvider = project.providers.gradleProperty("loadTest.rate").orElse("100000")
-    commandLine = listOf("bash", "local-dev/scripts/load-test.sh", "--rate", loadTestRateProvider.get())
+    commandLine = listOf("bash", "deployment/local-dev/scripts/load-test.sh", "--rate", loadTestRateProvider.get())
     workingDir = project.rootDir
 }

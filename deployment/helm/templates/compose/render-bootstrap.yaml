@@ -1,0 +1,9 @@
+{{- /*
+This file acts as a wrapper to render the _bootstrap.sh.tpl template.
+_bootstrap.sh.tpl is prefixed with an underscore to prevent Helm from
+trying to parse it as a primary chart template during its initial scan,
+which was causing a "SimpleHead" parsing error due to its shell script content.
+Underscore-prefixed templates are treated as helpers and are not directly
+rendered by "helm template --show-only" unless included by a non-underscored template.
+*/ -}}
+{{- tpl ($.Files.Get "templates/compose/_bootstrap.sh.tpl") . -}}
