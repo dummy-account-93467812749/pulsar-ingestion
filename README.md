@@ -2,6 +2,16 @@
 
 This monorepo houses Pulsar IO connectors and Pulsar Functions for building robust and scalable data ingestion pipelines.
 
+## Data Pipeline Overview
+
+This project implements a flexible data processing pipeline designed to ingest events from a variety of sources, transform them into a common format, and then route them for further processing or storage. Key sources include AWS Kinesis, Apache Kafka, RabbitMQ, HTTP endpoints, and gRPC services.
+
+The core of the pipeline leverages Apache Pulsar Functions for:
+*   **Translation:** Converting source-specific data schemas into a standardized `CommonEvent` format.
+*   **Routing:** Dynamically dispatching `CommonEvent` messages to different downstream topics based on event type.
+
+**For detailed information on the pipeline architecture, individual components (connectors and functions), deployment configurations, and instructions on how to run the system locally, please see the [Deployment Documentation](deployment/README.md).**
+
 ## Modules
 
 *   `common/`: Shared code, schemas, and utilities.

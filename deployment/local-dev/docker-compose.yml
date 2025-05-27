@@ -1,0 +1,87 @@
+version: '3.8'
+
+services:
+  pulsar:
+    image: apachepulsar/pulsar:3.1.2
+    ports:
+      - "6650:6650"
+      - "8080:8080"
+    entrypoint: ["bash", "/pulsar/docker-pulsar-entrypoint.sh"]
+    environment:
+      - PULSAR_MEM=-Xms512m -Xmx512m -XX:MaxDirectMemorySize=512m
+      - PULSAR_PREFIX_forceDeleteTenantAllowed=true
+      - PULSAR_PREFIX_forceDeleteNamespaceAllowed=true
+      - PULSAR_PREFIX_transactionCoordinatorEnabled=true
+      - PULSAR_PREFIX_brokerDeleteInactiveTopicsEnabled=true
+      - PULSAR_PREFIX_allowAutoTopicCreationType=non-partitioned
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/admin/v2/clusters/standalone"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    volumes:
+      - pulsar_data:/pulsar/data
+      - ./scripts/docker-pulsar-entrypoint.sh:/pulsar/docker-pulsar-entrypoint.sh:ro
+      - ./bootstrap.sh:/pulsar/conf/bootstrap.sh:ro
+
+  zookeeper:
+    image: bitnami/zookeeper:3.8
+    ports:
+      - "2181:2181"
+    environment:
+      - ALLOW_ANONYMOUS_LOGIN=yes
+    volumes:
+      - zookeeper_data:/bitnami/zookeeper
+
+  kafka:
+    image: bitnami/kafka:3.5
+    ports:
+      # Port for inter-container communication (e.g. Pulsar connector to Kafka broker)
+      # This port is not typically exposed to the host unless for specific debugging.
+      # - "9092:9092" 
+      # Port for external clients (e.g. load generator on the host) to connect to Kafka
+      - "19092:19092" 
+    environment:
+      - KAFKA_ENABLE_KRAFT=no # Using Zookeeper
+      - KAFKA_CFG_ZOOKEEPER_CONNECT=zookeeper:2181
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092,EXTERNAL://localhost:19092
+      - ALLOW_PLAINTEXT_LISTENER=yes
+      # Listeners: PLAINTEXT for inter-broker/internal, EXTERNAL for host access
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,EXTERNAL://:19092
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,EXTERNAL:EXTERNAL
+      - KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT
+    volumes:
+      - kafka_data:/bitnami/kafka
+    depends_on:
+      - zookeeper
+
+  localstack:
+    image: localstack/localstack:2.3
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=kinesis
+      - DEBUG=0
+      - DEFAULT_REGION=us-east-1
+      - EAGER_SERVICE_LOADING=1
+    volumes:
+      - localstack_data:/var/lib/localstack
+
+  rabbitmq:
+    image: rabbitmq:3.12-management
+    ports:
+      - "5672:5672"
+      - "15672:15672" # Management UI
+    environment:
+      - RABBITMQ_DEFAULT_USER=user
+      - RABBITMQ_DEFAULT_PASS=password
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+
+volumes:
+  pulsar_data:
+  zookeeper_data:
+  kafka_data:
+  localstack_data:
+  rabbitmq_data:

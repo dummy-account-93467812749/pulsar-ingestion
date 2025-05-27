@@ -33,6 +33,6 @@ tasks.register<Zip>("makeNar") {
 
 jib {
     from.image = "eclipse-temurin:21-jre"
-    to.image   = "ghcr.io/example-pulsar/${project.name}:${project.version}"
+    to.image   = "ghcr.io/acme/${project.name}:${project.version}"
     container.entrypoint = listOf()
 }
