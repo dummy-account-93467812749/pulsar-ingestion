@@ -1,0 +1,97 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: pulsar-register-pipeline-{{ $.Release.Name }}
+  namespace: {{ $.Values.namespace }}
+  labels:
+    app: pulsar-pipeline-registrar
+    tenant: {{ $.Values.tenant }}
+    release: {{ $.Release.Name }}
+spec:
+  template:
+    metadata:
+      labels:
+        app: pulsar-pipeline-registrar
+        tenant: {{ $.Values.tenant }}
+        release: {{ $.Release.Name }}
+    spec:
+      restartPolicy: Never
+      # Consider adding a service account if RBAC is enabled
+      # serviceAccountName: pulsar-admin-sa
+      containers:
+      - name: registration-runner
+        image: streamnative/pulsar-admin-utils:latest # Or your preferred image with pulsar-admin
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            set -ex; # Exit on error and print commands
+
+            echo "Starting pipeline registration for tenant {{ $.Values.tenant }} and namespace {{ $.Values.namespace }}";
+
+            {{- range $name, $func := .Values.functions }}
+            echo "Registering function: {{ $name }}";
+            pulsar-admin functions create \
+              --tenant {{ $.Values.tenant }} \
+              --namespace {{ $.Values.namespace }} \
+              --name {{ $name }} \
+              --inputs {{ $func.input }} \
+              {{- if $func.outputs }}
+              {{- $outputs := $func.outputs | default "" }}
+              {{- if kindIs "slice" $outputs -}}
+              --output {{ join "," $outputs }} \
+              {{- else }}
+              --output {{ $outputs }} \
+              {{- end -}}
+              {{- end }}
+              {{- if hasKey $func "image" }}
+              # Assuming Kubernetes runtime where image is used by the Function CRD.
+              # For pulsar-admin, if not using K8S runtime, you'd typically use --jar or --py.
+              # If this job is meant to register functions for a K8S runtime,
+              # it might be redundant if FunctionMesh CRDs are already applied.
+              # This is a common ambiguity. For now, using --jar as a placeholder if image implies a package.
+              # If image is a docker image for K8S runtime, this command might differ or not be needed.
+              --jar {{ $func.image }} \
+              {{- end }}
+              --class-name {{ $func.className }};
+            echo "Function {{ $name }} registered.";
+            {{- end }}
+
+            {{- range $name, $conn := .Values.connectors }}
+            echo "Registering connector: {{ $name }}";
+            {{- if $conn.source }}
+            pulsar-admin sources create \
+              --tenant {{ $.Values.tenant }} \
+              --namespace {{ $.Values.namespace }} \
+              --name {{ $name }} \
+              {{- if $conn.output }}
+              --topic-name {{ $conn.output }} \
+              {{- end }}
+              # Similar to functions, --archive expects a file path (e.g., NAR file).
+              # If {{ $conn.image }} is a Docker image for K8S runtime, this command may differ.
+              --archive {{ $conn.image }} \
+              {{- if $conn.configRef }}
+              # configRef "{{ $conn.configRef }}" implies the configuration is stored elsewhere (e.g., a Secret or ConfigMap).
+              # pulsar-admin expects --source-config as a JSON string or path to a config file.
+              # This template assumes that the resource named by configRef is handled externally
+              # and made available to the connector, or the connector image knows how to use it.
+              # For example, if it's a Secret, the pod spec for the connector would mount it.
+              # This script doesn't directly translate configRef to --source-config.
+              # Add --source-config "/path/to/mounted/{{ $conn.configRef }}.json" if applicable.
+              echo "Connector {{ $name }} uses configRef: {{ $conn.configRef }}. Ensure this configuration is available." \
+              {{- end }}
+              ;
+            echo "Connector {{ $name }} registered.";
+            {{- else if $conn.sink }}
+            # Placeholder for sink creation if needed in the future
+            # pulsar-admin sinks create ...
+            echo "Sink connector {{ $name }} registration not fully implemented in this template.";
+            {{- end }}
+            {{- end }}
+
+            echo "Pipeline registration completed.";
+            # Keep the pod running for a bit for logs, or remove if not needed
+            # sleep 30
+      # Add imagePullSecrets if using private registries
+      # imagePullSecrets:
+      # - name: my-registry-secret
+---

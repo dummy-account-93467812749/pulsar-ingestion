@@ -1,0 +1,5 @@
+apiVersion: v2
+name: pipeline-charts
+version: 0.1.0
+description: Helm charts for deploying the data pipeline
+appVersion: "0.1.0"

@@ -1,0 +1,83 @@
+{{- /* Generate Function CRDs */}}
+{{- range $name, $func := .Values.functions }}
+apiVersion: compute.functionmesh.io/v1alpha1
+kind: Function
+metadata:
+  name: {{ $name }}
+  namespace: {{ $.Values.namespace }}
+spec:
+  image: {{ $func.image }}
+  className: {{ $func.className }}
+  tenant: {{ $.Values.tenant }}
+  namespace: {{ $.Values.namespace }}
+  name: {{ $name }}
+  input:
+    topics: 
+      - {{ $func.input }}
+  {{- if $func.outputs }}
+  output:
+    {{- if kindIs "slice" $func.outputs }}
+    topics:
+    {{- range $func.outputs }}
+      - {{ . }}
+    {{- end }}
+    {{- else }}
+    topic: {{ $func.outputs }}
+    {{- end }}
+  {{- end }}
+  # Add other relevant fields like resources, parallelism if needed
+  # Example:
+  # replicas: 1
+  # resources:
+  #   limits:
+  #     cpu: "0.2"
+  #     memory: "256Mi"
+  #   requests:
+  #     cpu: "0.1"
+  #     memory: "128Mi"
+  # windowConfig:
+  #   windowLengthCount: 10
+  pulsar:
+    pulsarConfig: "{{ $.Values.tenant }}-pulsar-config" # Assumes a config map or similar for pulsar connection
+---
+{{- end }}
+
+{{- /* Generate Connector CRDs (Source for now as per pipeline.yaml example) */}}
+{{- range $name, $conn := .Values.connectors }}
+{{- if $conn.source }}
+apiVersion: compute.functionmesh.io/v1alpha1
+kind: Source # Assuming 'Source' CRD for connectors
+metadata:
+  name: {{ $name }}
+  namespace: {{ $.Values.namespace }}
+spec:
+  image: {{ $conn.image }}
+  tenant: {{ $.Values.tenant }}
+  namespace: {{ $.Values.namespace }}
+  name: {{ $name }}
+  output:
+    topic: {{ $conn.output }}
+  {{- if $conn.configRef }}
+  # FunctionMesh might expect config to be inlined or via a secretKeyRef
+  # This assumes configRef refers to a Secret containing the connector's config in a 'config.json' key
+  # Or, it could be a ConfigMap. The exact mechanism depends on FunctionMesh's capabilities.
+  # For now, we'll represent it as a reference that needs proper handling.
+  config:
+    secretKeyRef:
+      name: {{ $conn.configRef }} # Name of the Secret
+      key: config.json # Key within the Secret containing the JSON/YAML config
+  {{- end }}
+  # Example:
+  # replicas: 1
+  # resources:
+  #   limits:
+  #     cpu: "0.2"
+  #     memory: "256Mi"
+  #   requests:
+  #     cpu: "0.1"
+  #     memory: "128Mi"
+  pulsar:
+    pulsarConfig: "{{ $.Values.tenant }}-pulsar-config" # Assumes a config map or similar for pulsar connection
+---
+{{- end }}
+{{- end }}

@@ -1,0 +1,19 @@
+tenant: acme
+namespace: ingest
+functions:
+  splitter:
+    image: ghcr.io/acme/splitter:0.1.0
+    className: com.acme.pipeline.functions.SplitterFunction
+    input: orders-raw
+    outputs: [order-items, order-meta]
+  stateless-transform:
+    image: ghcr.io/acme/stateless-transform:0.1.0
+    className: com.acme.pipeline.functions.transform.StatelessTransformFunction
+    input: order-items
+    output: order-items-clean
+connectors:
+  kinesis-orders:
+    source: true
+    image: streamnative/pulsar-io-kinesis:2.10.0
+    configRef: kinesis-source-config
+    output: orders-raw
