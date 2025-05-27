@@ -53,6 +53,7 @@ subprojects {
 
     configure<com.diffplug.gradle.spotless.SpotlessExtension> {
         kotlin {
+            ktlint(libs.versions.ktlintCli.get()) // Corrected to use ktlintCli
             ktlint(libs.versions.ktlint.get())
         }
     }
