@@ -1,0 +1,5 @@
+# gRPC service endpoint
+grpcEndpoint: "localhost:50051"
+# Other gRPC configurations
+# Example: serviceName: "my.package.MyService"
+# Example: methodName: "MyMethod"

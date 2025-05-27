@@ -1,0 +1,9 @@
+bootstrapServers: "your-kafka-broker:9092"
+groupId: "pulsar-kafka-group"
+# For SASL auth, you might have:
+# security.protocol: "SASL_SSL"
+# sasl.mechanism: "PLAIN"
+# sasl.jaas.config: "${KAFKA_BROKERS_SASL_JAAS_CONFIG}" # This would be injected from a secret
+topic: "your-kafka-topic-to-read-from" # This is the Kafka topic, not the Pulsar topic
+fetchMessageMaxBytes: 1048576
+autoCommitEnabled: true

@@ -1,0 +1,9 @@
+name: rabbitmq
+type: source
+# image: field is intentionally omitted for native built-in connectors
+# Pulsar uses its own runtime for these. The 'type' field (or a className if needed)
+# is usually sufficient for Pulsar to find the native connector.
+topic: persistent://public/default/rabbitmq-topic
+configFile: config.sample.yml
+secretKeys: ["RABBITMQ_USERNAME", "RABBITMQ_PASSWORD"]
+parallelism: 1
