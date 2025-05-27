@@ -1,0 +1,9 @@
+name: kinesis
+type: source
+# image: field is intentionally omitted for native built-in connectors
+# Pulsar uses its own runtime for these. The 'type' field (or a className if needed)
+# is usually sufficient for Pulsar to find the native connector.
+topic: persistent://public/default/kinesis-topic
+configFile: config.sample.yml
+secretKeys: ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"]
+parallelism: 1

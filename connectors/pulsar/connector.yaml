@@ -1,0 +1,9 @@
+name: pulsar
+type: source
+image: "" # Assuming it's a custom-code connector
+topic: persistent://public/default/pulsar-input-topic # Replace with actual INPUT topic for this connector
+# This connector likely reads from one Pulsar topic and writes to another (specified by the framework via user).
+# So the 'topic' field here is what it produces to. The config will specify what it consumes.
+configFile: config.sample.yml
+secretKeys: [] # Add any secret keys if applicable (e.g., for auth to the source Pulsar cluster)
+parallelism: 1

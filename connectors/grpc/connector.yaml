@@ -1,0 +1,7 @@
+name: grpc
+type: source
+image: "" # Custom-code connector, source code seems to be missing
+topic: persistent://public/default/grpc-topic
+configFile: config.sample.yml
+secretKeys: []
+parallelism: 1

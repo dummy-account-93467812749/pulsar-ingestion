@@ -1,0 +1,4 @@
+# Azure Event Hubs connection string
+eventhubConnectionString: "${EVENTHUB_CONNECTION_STRING}"
+# Other configurations
+consumerGroup: "$Default"

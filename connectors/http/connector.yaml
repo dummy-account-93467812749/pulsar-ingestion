@@ -1,0 +1,7 @@
+name: http
+type: source
+image: "" # Assuming it's a custom-code connector for now
+topic: persistent://public/default/http-topic # Replace with actual topic if known, otherwise use a placeholder
+configFile: config.sample.yml
+secretKeys: [] # Add any secret keys if applicable
+parallelism: 1
