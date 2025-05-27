@@ -1,0 +1,53 @@
+# Configuration for the Azure Event Hubs Source Connector
+# connectorClass: org.apache.pulsar.io.azureeventhub.source.AzureEventHubSource (Update with actual class name later)
+
+# Event Hubs Connection Details
+fullyQualifiedNamespace: "your-eventhubs-namespace.servicebus.windows.net"
+eventHubName: "your-eventhub-name"
+consumerGroup: "$Default" # Default consumer group, change if needed
+
+# Authentication: Choose one method
+
+# Option 1: Connection String (Recommended for specific Event Hub access)
+# If provided, this will be used. Ensure it has listen permissions.
+# connectionString: "Endpoint=sb://<fullyQualifiedNamespace>/;SharedAccessKeyName=<SASKeyName>;SharedAccessKey=<SASKey>;EntityPath=<eventHubName>"
+
+# Option 2: Credential-based (e.g., DefaultAzureCredential or Service Principal)
+# Used if connectionString is not provided.
+credential:
+  # For DefaultAzureCredential, these are often optional if environment is configured (e.g., Azure CLI login, Managed Identity)
+  # tenantId: "your-tenant-id"
+  # clientId: "your-client-id" # For Service Principal or User Assigned Managed Identity
+  # clientSecret: "your-client-secret" # For Service Principal
+  # authorityHost: "https://login.microsoftonline.com/" # Optional: Defaults to public cloud
+
+# Checkpoint Store: Azure Blob Storage is used by EventProcessorClient
+checkpointStore:
+  # Option A: Using Blob Container URL and DefaultAzureCredential (or credential above)
+  # Ensure the credential used has permissions to read/write to this blob container.
+  blobContainerUrl: "https://your-storage-account.blob.core.windows.net/your-container-name"
+
+  # Option B: Using Storage Account, Container Name, and specific storage credential (e.g. connection string for storage)
+  # storageAccountName: "yourstorageaccountname" # Name of the Azure Storage account
+  # storageContainerName: "yourcheckpointcontainer" # Name of the blob container
+  # storageConnectionString: "DefaultEndpointsProtocol=https;AccountName=...;AccountKey=...;EndpointSuffix=core.windows.net" # Connection string for the storage account
+  # Note: If using storageConnectionString, the top-level 'credential' might not be used for storage,
+  # or DefaultAzureCredential might pick it up if it has storage permissions. Be mindful of credential scope.
+
+# Event Processor Client settings
+prefetchCount: 300 # Optional: Number of events to prefetch. Default in Azure SDK is 300.
+# initialPartitionEventPosition: # Optional map to specify starting position for specific partitions
+#   "0": "EARLIEST" # Partition ID: "0", Position: "EARLIEST", "LATEST", "OFFSET <number>", "SEQUENCE_NUMBER <number>", "ENQUEUED_TIME <ISO_8601_UTC_timestamp>"
+#   "1": "OFFSET 12345"
+# maxBatchSize: 10 # Optional: Max number of events in a batch for processEvent callback. Default is 10.
+# maxWaitTimeInSeconds: 1 # Optional: Max time to wait to fill a batch. Default is 1 second.
+
+# Optional: Configure how often to try to claim ownership of partitions (in seconds)
+# partitionOwnershipExpirationIntervalInSeconds: 120 # Default is 120 seconds (2 minutes)
+# loadBalancingUpdateIntervalInSeconds: 30 # Default is 30 seconds
+
+# Pulsar specific (not directly part of Azure SDK config, but for the source connector behavior)
+# receiveQueueSize: 1000 # Optional: Internal queue size for buffering records before pushing to Pulsar.
+# metricsEnabled: false # Optional: Enable/disable specific metrics reporting.
+# pulsarFormat: "BYTES" # Default: "BYTES". Could be "STRING", "JSON" in future if conversion is added.
+# pulsarTopic: "" # Optional: If specified, messages will be sent to this Pulsar topic, otherwise use context.outputTopic
