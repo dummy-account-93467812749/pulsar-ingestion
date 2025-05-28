@@ -1,0 +1,5 @@
+apiVersion: v2
+name: worker-chart
+version: 0.1.0
+description: Helm chart for deploying connectors and functions as Pulsar workers
+appVersion: "0.1.0"
