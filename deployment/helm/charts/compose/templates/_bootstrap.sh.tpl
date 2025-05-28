@@ -1,89 +1,70 @@
-#!/bin/bash
-# This script is intended to be run after the Pulsar cluster is up and running.
-# It registers functions and connectors based on the pipeline configuration.
+#!/usr/bin/env bash
 
-# Ensure the script exits on any error
-set -e
+set -e  # Exit immediately on error
+# set -x  # Uncomment to debug command execution
 
-PULSAR_CONTAINER_NAME="pulsar" # Default Pulsar container name in docker-compose
+ADMIN_CMD="pulsar-admin"
+TENANT="{{ default "public" .Values.tenant }}"
+NAMESPACE="{{ default "default" .Values.namespace }}"
 
-echo "Waiting for Pulsar service to be ready..."
-# Simple wait loop, adjust timeout and check command as needed
-# timeout 60s bash -c 'until docker exec $PULSAR_CONTAINER_NAME bin/pulsar-admin tenants get {{ $.Values.tenant }} > /dev/null 2>&1; do echo "Pulsar not ready yet, sleeping..."; sleep 5; done'
-echo "Pulsar service is ready. (NOTE: Wait loop temporarily commented out for debugging Helm parsing)"
+# Ensure .Values.functions and .Values.connectors are never nil
+{{- $functions := default (list) .Values.functions }}
+{{- $connectors := default (list) .Values.connectors }}
 
-echo "Starting pipeline registration for tenant {{ $.Values.tenant }} and namespace {{ $.Values.namespace }}..."
+echo "Waiting for Pulsar to be ready..."
+until ${ADMIN_CMD} tenants get "${TENANT}" > /dev/null 2>&1; do
+  echo -n "."
+  sleep 5
+done
 
-{{- range $name, $func := .Values.functions }}
-echo "Registering function: {{ $name }}..."
-{{/* Assuming the function package (e.g., JAR, Python file, NAR) is available in the Pulsar container. */}}
-{{/* The `image` field from pipeline.yaml (e.g., $func.image) is used as a placeholder for the package name/path. */}}
-{{/* For example, if image is "ghcr.io/acme/splitter:0.1.0", the actual file might be "splitter.jar" or "splitter.py". */}}
-{{/* Users need to ensure these files are mounted or copied into the Pulsar container at the specified paths. */}}
-{{/* Common paths could be /pulsar/functions/ or /pulsar/connectors/. */}}
-{{/* Adjust --jar, --py, or --go based on the function type. */}}
-{{/* For this example, we'll assume --jar and that the image name can be mapped to a JAR file name. */}}
-{{/* Example: /pulsar/functions/<name-from-image>.jar */}}
+echo "Creating tenant '${TENANT}' if missing..."
+${ADMIN_CMD} tenants create "${TENANT}" --allowed-clusters standalone \
+  || echo "Tenant '${TENANT}' exists or creation failed."
 
-# The actual command might depend on whether it's a JAR, Python file, etc.
-# Using a generic placeholder for the package path.
-PACKAGE_PATH="/pulsar/functions/{{ $func.image | splitList "/" | last }}" # Example, adjust as needed
+echo "Creating namespace '${TENANT}/${NAMESPACE}' if missing..."
+${ADMIN_CMD} namespaces create "${TENANT}/${NAMESPACE}" --clusters standalone \
+  || echo "Namespace '${TENANT}/${NAMESPACE}' exists or creation failed."
 
-docker exec -i $PULSAR_CONTAINER_NAME \
-  bin/pulsar-admin functions create \
-  --tenant {{ $.Values.tenant }} \
-  --namespace {{ $.Values.namespace }} \
-  --name {{ $name }} \
-  --inputs {{ $func.input }} \
-  {{- if $func.outputs }}
-  {{- $outputs := $func.outputs | default "" }}
-  {{- if kindIs "slice" $outputs -}}
-  --output "{{ join "," $outputs }}" \
+# --- Deploy Functions ---
+{{- range $name, $func := $functions }}
+echo "Deploying function '{{ $name }}'..."
+${ADMIN_CMD} functions create \
+  --tenant "${TENANT}" \
+  --namespace "${NAMESPACE}" \
+  --name "{{ $name }}" \
+  {{- if $func.className }}--classname "{{ $func.className }}" \{{ end }}
+  {{- if $func.jar }}--jar "/pulsar/functions/{{ $func.jar }}" \{{ else if $func.image }}--jar "/pulsar/functions/{{ $name }}.jar" \{{ end }}
+  {{- if $func.inputs }}--inputs "{{ $func.inputs }}" \{{ end }}
+  {{- if $func.output }}--output "{{ $func.output }}" \{{ end }}
+  {{- if $func.parallelism }}--parallelism {{ $func.parallelism }} \{{ end }}
+  {{- if $func.userConfig }}--user-config '{{ $func.userConfig | toJson }}' \{{ end }}
+  --auto-ack true \
+  || echo "Failed to create function '{{ $name }}'."
+{{- end }}
+
+# --- Deploy Connectors ---
+{{- range $name, $conn := $connectors }}
+echo "Deploying connector '{{ $name }}'..."
+CONFIG_FILE="/pulsar/connectors/{{ $name }}_config.yml"
+${ADMIN_CMD} sources create \
+  --tenant "${TENANT}" \
+  --namespace "${NAMESPACE}" \
+  --name "{{ $name }}" \
+  {{- if $conn.isCustom }}
+    {{- if $conn.archive }}--archive "/pulsar/connectors/{{ $conn.archive }}" \{{ else if $conn.image }}--archive "/pulsar/connectors/{{ $name }}.nar" \{{ else }}echo "WARNING: custom '{{ $name }}' missing archive/image." ;\{{ end }}
   {{- else }}
-  --output "{{ $outputs }}" \
-  {{- end -}}
+    {{- if $conn.type }}--source-type "{{ $conn.type }}" \{{ end }}
   {{- end }}
-  # This part is highly dependent on the function package type (JAR, Python, Go)
-  # and where it's located inside the Pulsar container.
-  # Assuming a JAR for now, derived from the image name.
-  --jar $PACKAGE_PATH \
-  --class-name {{ $func.className }}
-echo "Function {{ $name }} registered."
+  {{- if $conn.topic }}--topic-name "{{ $conn.topic }}" \{{ end }}
+  {{- if $conn.parallelism }}--parallelism {{ $conn.parallelism }} \{{ end }}
+  --processing-guarantees ATLEAST_ONCE \
+  --source-config-file "${CONFIG_FILE}" \
+  || echo "Failed to create connector '{{ $name }}'."
 {{- end }}
 
-{{- range $name, $conn := .Values.connectors }}
-echo "Registering connector: {{ $name }}..."
-{{/* Similar to functions, the `image` field ($conn.image) is a placeholder for the connector package (NAR file). */}}
-{{/* Example: /pulsar/connectors/<name-from-image>.nar */}}
-CONNECTOR_ARCHIVE_PATH="/pulsar/connectors/{{ $conn.image | splitList "/" | last }}" # Example, adjust
+echo "------------------------------------------"
+echo "Pipeline bootstrap complete: Tenant=${TENANT}, Namespace=${NAMESPACE}."
+echo "Deployed {{ len $functions }} functions and {{ len $connectors }} connectors."
+echo "------------------------------------------"
 
-{{- if $conn.source }}
-docker exec -i $PULSAR_CONTAINER_NAME \
-  bin/pulsar-admin sources create \
-  --tenant {{ $.Values.tenant }} \
-  --namespace {{ $.Values.namespace }} \
-  --name {{ $name }} \
-  {{- if $conn.output }}
-  --topic-name {{ $conn.output }} \
-  {{- end }}
-  --archive $CONNECTOR_ARCHIVE_PATH \
-  {{- if $conn.configRef }}
-  {{/* In a Docker Compose setup, configRef might refer to a file path mounted into the pulsar container */}}
-  {{/* or a key in a JSON config file. This template assumes it's a path to a config file. */}}
-  {{/* Example: /pulsar/configs/{{ $conn.configRef }}.json - Note: $conn.configRef is evaluated by Helm */}}
-  --source-config-file /pulsar/configs/{{ $conn.configRef }}.yaml \
-  {{- end }}
-echo "Source connector {{ $name }} registered."
-{{- else if $conn.sink }}
-# Placeholder for sink creation
-# docker exec -i $PULSAR_CONTAINER_NAME \
-#   bin/pulsar-admin sinks create \
-#   ...
-echo "Sink connector {{ $name }} registration not fully implemented in this template."
-{{- end }}
-{{- end }}
-
-echo "Pipeline registration completed for tenant {{ $.Values.tenant }} and namespace {{ $.Values.namespace }}."
-echo "You can inspect functions and connectors using pulsar-admin."
-echo "Example: docker exec -it $PULSAR_CONTAINER_NAME bin/pulsar-admin functions list --tenant {{ $.Values.tenant }} --namespace {{ $.Values.namespace }}"
-echo "Example: docker exec -it $PULSAR_CONTAINER_NAME bin/pulsar-admin sources list --tenant {{ $.Values.tenant }} --namespace {{ $.Values.namespace }}"
+# tail -f /dev/null  # Keep container alive for logs if needed
