@@ -52,17 +52,6 @@ ${ADMIN_CMD} \
   --topic-name "persistent://public/default/rabbitmq-topic" \
   --source-config '{\"connectionName\":\"pulsar-rabbitmq-source\",\"host\":\"localhost\",\"port\":5672,\"virtualHost\":\"/\",\"queueName\":\"your-rabbitmq-queue\"}' || echo "Failed to create connector 'rabbitmq', it might already exist."
 
-echo "Deploying source connector 'http'..."
-${ADMIN_CMD} \
-  sources \
-  create \
-  --tenant ${TENANT} \
-  --namespace ${NAMESPACE} \
-  --name "http" \
-  --archive "/pulsar/connectors/http.nar" \
-  --topic-name "persistent://public/default/http-topic" \
-  --source-config '{\"httpEndpoint\":\"http://localhost:8080/messages\"}' || echo "Failed to create connector 'http', it might already exist."
-
 echo "Deploying source connector 'kafka'..."
 ${ADMIN_CMD} \
   sources \
@@ -74,17 +63,6 @@ ${ADMIN_CMD} \
   --topic-name "persistent://public/default/kafka-topic" \
   --source-config '{\"bootstrapServers\":\"your-kafka-broker:9092\",\"groupId\":\"pulsar-kafka-group\",\"topic\":\"your-kafka-topic-to-read-from\",\"fetchMessageMaxBytes\":1048576,\"autoCommitEnabled\":true}' || echo "Failed to create connector 'kafka', it might already exist."
 
-echo "Deploying source connector 'azure-eventhub'..."
-${ADMIN_CMD} \
-  sources \
-  create \
-  --tenant ${TENANT} \
-  --namespace ${NAMESPACE} \
-  --name "azure-eventhub" \
-  --archive "/pulsar/connectors/azure-eventhub.nar" \
-  --topic-name "persistent://public/default/azure-eventhub-topic" \
-  --source-config '{\"eventhubConnectionString\":\"${EVENTHUB_CONNECTION_STRING}\",\"consumerGroup\":\"$Default\"}' || echo "Failed to create connector 'azure-eventhub', it might already exist."
-
 echo "Deploying source connector 'pulsar'..."
 ${ADMIN_CMD} \
   sources \
@@ -92,7 +70,7 @@ ${ADMIN_CMD} \
   --tenant ${TENANT} \
   --namespace ${NAMESPACE} \
   --name "pulsar" \
-  --archive "/pulsar/connectors/pulsar.nar" \
+  --source-type "pulsar" \
   --topic-name "persistent://public/default/pulsar-input-topic" \
   --source-config '{\"sourceServiceUrl\":\"pulsar://source-cluster-host:6650\",\"sourceTopicName\":\"persistent://public/default/some-other-topic\",\"subscriptionName\":\"pulsar-source-subscription\"}' || echo "Failed to create connector 'pulsar', it might already exist."
 
