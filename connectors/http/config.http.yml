@@ -1,0 +1,18 @@
+# Pulsar Netty Source Connector Configuration for HTTP Mode
+
+# Type of service for Netty to run
+# For an HTTP server that accepts POST requests.
+type: "http"
+
+# Host for the HTTP server to listen on
+# Use "0.0.0.0" to listen on all available network interfaces.
+host: "0.0.0.0"
+
+# Port for the HTTP server to listen on
+# The original sample used 8080 for its httpEndpoint. Let's use a common default like 10999 as per Netty docs or make it configurable.
+# For consistency with Netty docs, using 10999. User can change as needed.
+port: 10999
+
+# Optional: Number of threads for the Netty server
+# Defaults to 1 if not specified, according to documentation.
+# numberOfThreads: 1

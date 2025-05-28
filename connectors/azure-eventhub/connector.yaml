@@ -1,7 +1,5 @@
-name: azure-eventhub
-type: source
-image: "" # Assuming it's a custom-code connector for now
-topic: persistent://public/default/azure-eventhub-topic # Replace with actual topic if known, otherwise use a placeholder
-configFile: config.sample.yml
-secretKeys: [] # Add any secret keys if applicable
+name: azure-eventhub-amqp
+type: amqp # This type should map to the Pulsar AMQP 1.0 connector
+topic: persistent://public/default/eventhub-amqp-input-topic
+configFile: config.amqp.yml
 parallelism: 1

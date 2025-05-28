@@ -38,6 +38,52 @@ subprojects {
         val integrationTest by sourceSets.creating {
             compileClasspath += sourceSets["main"].output
             runtimeClasspath += sourceSets["main"].output
+
+            // Standard path within project
+            java.srcDir("src/integrationTest/java")
+            kotlin.srcDir("src/integrationTest/kotlin")
+            resources.srcDir("src/integrationTest/resources")
+
+            // Check if this project is a connector that uses the new centralized test structure
+            // Project names are like "connectors-azure-eventhub-source", "connectors-http-source" etc. from settings.gradle.kts
+            // We need to extract "azure-eventhub", "http" from project.name
+            val projectName = project.name
+            var connectorName = ""
+            if (project.path.startsWith(":connectors:")) {
+                // Assuming project name format is "connectors-<connectorId>-source" or "<connectorId>-source" if group is "connectors"
+                // Or if project.name is "azure-eventhub-source" when project path is ":connectors:azure-eventhub-source"
+                // Let's try to be robust: remove common suffixes and prefixes if necessary.
+                // A simpler way if using project.name directly from a path like :connectors:azure-eventhub-source
+                // project.name would be "azure-eventhub-source"
+                connectorName = projectName.removeSuffix("-source") // "azure-eventhub"
+                                       .removeSuffix("-connector") // common pattern
+                                       .removePrefix("pulsar-io-") // common pattern
+                                       .removePrefix("connectors-") // if group not used in name
+
+                 // If project.path is ":connectors:azure-eventhub", project.name is "azure-eventhub"
+                if (project.parent?.name == "connectors" && project.name.contains("-source")){
+                     connectorName = project.name.removeSuffix("-source")
+                } else if (project.parent?.name == "connectors") {
+                     connectorName = project.name
+                }
+
+
+                // Refined logic based on typical project path structure like ":connectors:azure-eventhub-source"
+                if (project.path.count { it == ':' } == 2 && project.path.startsWith(":connectors:")) {
+                    connectorName = project.name.removeSuffix("-source")
+                }
+
+
+                val centralizedTestDir = project.rootDir.resolve("connectors/test/$connectorName")
+                if (centralizedTestDir.exists()) {
+                    project.logger.lifecycle("Project ${project.path} is a connector. Adding centralized integration test path: ${centralizedTestDir.path} for connector name: $connectorName")
+                    kotlin.srcDir(centralizedTestDir)
+                    // If resources are also centralized, add:
+                    // resources.srcDir(project.rootDir.resolve("connectors/test/$connectorName/resources"))
+                } else {
+                    project.logger.lifecycle("Project ${project.path} is a connector. Centralized test dir NOT FOUND: ${centralizedTestDir.path} for connector name: $connectorName (original project name: ${project.name})")
+                }
+            }
         }
         configurations.maybeCreate("integrationTestImplementation").extendsFrom(configurations["testImplementation"])
         configurations.maybeCreate("integrationTestRuntimeOnly").extendsFrom(configurations["testRuntimeOnly"])
