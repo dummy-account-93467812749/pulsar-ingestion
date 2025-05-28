@@ -6,7 +6,7 @@ import org.gradle.api.execution.TaskExecutionGraph
 import org.gradle.kotlin.dsl.closureOf
 import org.yaml.snakeyaml.Yaml
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-import java.io.File // Added for File type hint, though not strictly necessary for the change
+import java.io.File // Ensure this import is present
 
 plugins {
     alias(libs.plugins.kotlin.jvm) apply false
@@ -110,7 +110,6 @@ tasks.register("generateManifests") {
         val yaml = Yaml()
         val pipelineFile = project.file("deployment/pipeline.yaml")
 
-        // Load or initialize functions map
         @Suppress("UNCHECKED_CAST")
         val functionsMap: MutableMap<String, Any> = if (pipelineFile.exists()) {
             val cfg = yaml.load<Map<String, Any>>(pipelineFile.readText())
@@ -120,31 +119,28 @@ tasks.register("generateManifests") {
             mutableMapOf()
         }
 
-        // Read tenant & namespace
+        @Suppress("UNCHECKED_CAST")
         val rootCfg = if (pipelineFile.exists()) yaml.load<Map<String, Any>>(pipelineFile.readText()) else emptyMap<String, Any>()
         val tenant = rootCfg["tenant"] as? String ?: "default-tenant"
         val namespace = rootCfg["namespace"] as? String ?: "default-namespace"
 
-        // Discover connectors
         val connectorEntries = mutableListOf<Map<String, Any>>()
         project.file("connectors").takeIf(File::isDirectory)?.listFiles()?.forEach { dir ->
             if (!dir.isDirectory) return@forEach
-
             val yml = dir.resolve("connector.yaml")
             if (!yml.exists()) {
                 logger.warn("connector.yaml not found in ${dir.path}")
                 return@forEach
             }
-
             try {
                 @Suppress("UNCHECKED_CAST")
                 val cfg = yaml.load<Map<String, Any>>(yml.readText())
+                @Suppress("UNCHECKED_CAST")
                 val specific = (cfg["configFile"] as? String)
                     ?.let { dir.resolve(it) }
                     ?.takeIf(File::exists)
                     ?.let { yaml.load<Map<String, Any>>(it.readText()) }
                     ?: emptyMap<String, Any>()
-
                 connectorEntries += mapOf(
                     "name" to dir.name,
                     "type" to cfg["type"]?.toString().orEmpty(),
@@ -160,78 +156,116 @@ tasks.register("generateManifests") {
 
         println("Found ${functionsMap.size} functions and ${connectorEntries.size} connectors.")
 
-        // Build Helm values file
+        @Suppress("UNCHECKED_CAST")
+        val adaptedFunctionsForMesh = functionsMap.mapValues { (_, funcValue) ->
+            val func = funcValue as Map<String, Any>
+            val newFunc = func.toMutableMap()
+
+            val inputsValue = func["inputs"]
+            if (inputsValue != null) {
+                if (inputsValue is List<*> && inputsValue.isNotEmpty()) {
+                    newFunc["input"] = inputsValue.first().toString()
+                } else if (inputsValue is String) {
+                    newFunc["input"] = inputsValue
+                }
+                if (newFunc.containsKey("input")) { // Only remove if 'input' was successfully set from 'inputs'
+                    newFunc.remove("inputs")
+                }
+            } else if (func.containsKey("input")) {
+                newFunc["input"] = func["input"].toString() // Ensure it's a string
+            }
+
+            val outputValue = func["output"]
+            if (func.containsKey("output")) { // Check if the key "output" exists
+                if (outputValue != null) {
+                    newFunc["outputs"] = outputValue // Pass the value if not null
+                }
+                // If outputValue is null, 'outputs' is not set, Helm's 'if $func.outputs' handles it
+                newFunc.remove("output") // Remove the original "output" key
+            }
+            newFunc
+        }
+
+        @Suppress("UNCHECKED_CAST")
+        val adaptedConnectorsForMesh = connectorEntries.associateBy { it["name"].toString() }.mapValues { (_, connValue) ->
+            val conn = connValue as Map<String, Any> // Cast is okay due to associateBy structure
+            mapOf(
+                "source" to (conn["type"]?.toString()?.lowercase() == "source"),
+                "name" to conn["name"],
+                "image" to conn["image"],
+                "output" to conn["topic"],
+                "configRef" to "${conn["name"]}-connector-config"
+            )
+        }
+
         val helmValues = mapOf(
             "tenant" to tenant,
             "namespace" to namespace,
+            "mesh" to mapOf(
+                "enabled" to true,
+                "functions" to adaptedFunctionsForMesh,
+                "connectors" to adaptedConnectorsForMesh
+            ),
             "functions" to functionsMap,
             "connectors" to connectorEntries.associateBy { it["name"].toString() }
         )
 
-        val valuesFile = project.buildDir
-            .resolve("tmp/helm_values.yaml")
-            .apply { parentFile.mkdirs() }
+        val valuesFile = project.buildDir.resolve("tmp/helm_values.yaml").apply { parentFile.mkdirs() }
         valuesFile.writeText(yaml.dump(helmValues))
-
         println("Helm values written to ${valuesFile.absolutePath}")
 
-        // Path to Helm chart directory
         val helmChartDir = project.file("deployment/helm")
 
-        // Helper for templating k8s YAML via Helm
-        fun gen(release: String, chart: String, out: File) {
+        fun gen(release: String, targetSourceTemplate: String, out: File) {
             out.parentFile.mkdirs()
-
-            project.exec {
+            val outputBaos = java.io.ByteArrayOutputStream()
+            val errorBaos = java.io.ByteArrayOutputStream()
+            val execResult = project.exec {
                 executable = "helm"
-                args = listOf(
-                    "template",
-                    release,
-                    helmChartDir.absolutePath,
-                    "--values",
-                    valuesFile.absolutePath,
-                    "--show-only",
-                    chart
-                )
-                standardOutput = out.outputStream()
+                args = listOf("template", release, helmChartDir.absolutePath, "--values", valuesFile.absolutePath)
+                standardOutput = outputBaos
+                errorOutput = errorBaos
+                isIgnoreExitValue = true
             }
-
-            println("Wrote $chart -> ${out.path}")
+            val fullOutput = outputBaos.toString().trim()
+            val errorOutput = errorBaos.toString().trim()
+            if (execResult.exitValue != 0) {
+                logger.error("Helm template command failed for release '$release'. Exit code: ${execResult.exitValue}")
+                logger.error("Helm stderr: $errorOutput")
+            }
+            val documents = mutableListOf<String>()
+            val sourceCommentPrefix = "# Source: "
+            fullOutput.split("---").forEach { docString ->
+                val trimmedDoc = docString.trim()
+                if (trimmedDoc.isNotEmpty() && trimmedDoc.startsWith(sourceCommentPrefix + targetSourceTemplate)) {
+                    documents.add(trimmedDoc)
+                }
+            }
+            if (documents.isNotEmpty()) {
+                out.writeText(documents.joinToString("\n---\n") + "\n")
+                println("Wrote (filtered) $targetSourceTemplate -> ${out.path}")
+            } else {
+                logger.warn("No documents found for source '$targetSourceTemplate' in Helm output for release '$release'. Output file '${out.path}' will be empty or not created.")
+                out.writeText("")
+            }
         }
 
-        // Generate k8s manifests
-        gen(
-            release = "fm",
-            chart   = "mesh/templates/function-mesh.yaml", // MODIFIED HERE
-            out     = project.buildDir.resolve("deploy/functionmesh-pipeline.yaml")
-        )
+        gen("fm", "pipeline-charts/charts/mesh/templates/function-mesh.yaml", project.buildDir.resolve("deploy/functionmesh-pipeline.yaml"))
+        gen("wk", "pipeline-charts/charts/worker/templates/registration-job.yaml", project.buildDir.resolve("deploy/worker-pipeline.yaml"))
 
-        gen(
-            release = "wk",
-            chart   = "worker/templates/registration-job.yaml", // MODIFIED HERE
-            out     = project.buildDir.resolve("deploy/worker-pipeline.yaml")
-        )
-
-        // Copy bootstrap script as-is
-        // Note: This copies from the PARENT chart's templates/compose directory.
-        // Ensure this is the intended bootstrap script.
-        // The original error was related to deployment/helm/charts/compose/templates/bootstrap.sh.tpl
-        // which you've renamed to _bootstrap.sh.tpl
-        val bsTemplate = helmChartDir.resolve("templates/compose/bootstrap.sh.tpl")
-        val bsOut      = project.buildDir.resolve("deploy/compose/bootstrap.sh")
-
-        // Check if bsTemplate actually exists before attempting to copy, to avoid build failure if it was cleaned up
+        val bsTemplate = helmChartDir.resolve("scripts/bootstrap-direct-admin.sh.tpl")
+        val bsOut = project.buildDir.resolve("deploy/compose/bootstrap.sh")
         if (bsTemplate.exists()) {
             copy {
                 from(bsTemplate.parentFile)
-                include(bsTemplate.name)
+                include("bootstrap-direct-admin.sh.tpl")
                 into(bsOut.parentFile)
-                rename { "bootstrap.sh" } // Renames bsTemplate.name to "bootstrap.sh" in the destination
+                rename { "bootstrap.sh" }
             }
             bsOut.setExecutable(true)
             println("Copied bootstrap script -> ${bsOut.absolutePath}")
         } else {
-            logger.warn("Bootstrap template not found at ${bsTemplate.path}, skipping copy.")
+            logger.warn("Bootstrap template (for copy) not found at ${bsTemplate.path}, skipping copy.")
         }
     }
 }
@@ -250,7 +284,6 @@ tasks.register<Exec>("composeDown") {
     workingDir=project.file("deployment/local-dev");
     commandLine("docker","compose","down","--volumes")
 }
-
 tasks.register<Exec>("loadTest") {
     group="sandbox";
     description="Runs load test";
