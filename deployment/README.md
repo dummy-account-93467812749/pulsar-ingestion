@@ -1,124 +1,142 @@
-# Deployment Overview
+# Project Deployment Artifacts
 
-All deployment artefacts for the Pulsar pipeline reside in this directory. This document outlines the structure, generation process, and usage of these artefacts.
+## 1. Overview
 
-## Pipeline Definition
+This directory contains all necessary artifacts and configurations for deploying the project's Pulsar functions and connectors across different environments, including local development (Docker Compose) and Kubernetes (via Helm).
 
-The overall pipeline structure, its functions, and global configurations like the Pulsar `tenant` and `namespace` are primarily defined in `deployment/pipeline.yaml`.
+The deployment process is primarily driven by the `generateManifests` Gradle task, which processes definitions from `pipeline.yaml` and connector configurations to produce deployment-ready files.
 
-Connectors (Sources and Sinks) are defined in their respective subdirectories within the `connectors/` directory at the root of the project. Each connector is specified by a `connector.yaml` file and its associated configuration files (e.g., `config.dev.yaml`, `config.prod.yaml`). The `generateManifests` task automatically discovers these connectors. For details on the schema of `connector.yaml`, please refer to the main `README.md` at the project root.
+## 2. Sources of Truth
 
-## Deployment Structure
+The deployment configurations are primarily defined in the following locations:
 
-*   `pipeline.yaml`: Defines functions and global pipeline settings (tenant, namespace).
-*   `connectors/` (Root Directory): Contains subdirectories for each connector, each with its `connector.yaml` and specific configuration files.
-*   `local-dev/`: Contains the setup for running a local development environment.
-    *   `docker-compose.yml`: Defines services for local development (Pulsar, Zookeeper, Kafka, LocalStack, RabbitMQ).
-    *   `bootstrap.sh`: **Generated script** to provision all Pulsar resources (tenant, namespace, topics, functions, connectors) based on `pipeline.yaml` and discovered connectors.
-    *   `scripts/load-test.sh`: Utility script to send sample data to pipeline input sources.
-*   `helm/`: Contains Helm chart templates used by the `generateManifests` task.
-    *   `helm/templates/mesh/`: Templates for FunctionMesh Custom Resource Definitions (CRDs).
-    *   `helm/templates/worker/`: Templates for Kubernetes Job manifests (worker-style deployment).
-    *   `helm/templates/compose/`: Template for the `deployment/local-dev/bootstrap.sh` script.
-*   `build/tmp/helm_values.yaml` (Generated File): Intermediate file created by `generateManifests` containing aggregated values from `pipeline.yaml` and `connectors/` to feed into Helm.
-*   `build/deploy/` (Generated Directory): Output directory for Kubernetes manifests.
-    *   `functionmesh-pipeline.yaml`: Kubernetes manifest for FunctionMesh deployment.
-    *   `worker-pipeline.yaml`: Kubernetes manifest for worker-style (Kubernetes Job) deployment.
+*   **`deployment/pipeline.yaml`**: This file is the central configuration for defining the Pulsar pipeline. It includes:
+    *   Target Pulsar tenant and namespace.
+    *   Definitions for all Pulsar Functions, including their inputs, outputs, class names, and any specific configurations.
+*   **`connectors/**/connector.yaml`**: Each subdirectory within the `/connectors` directory (e.g., `/connectors/s3-sink/`) should contain a `connector.yaml` file. This file defines:
+    *   The connector's name, type (source or sink), image/archive, and target topic.
+    *   A reference to a specific configuration file (e.g., `config.dev.yaml`) containing the detailed settings for that connector.
 
-## `generateManifests` Gradle Task
+These files serve as the input for the `generateManifests` Gradle task.
 
-The `./gradlew generateManifests` task is the core mechanism for generating all deployment artifacts. It performs the following steps:
+## 3. Directory Structure (`/deployment`)
 
-1.  Reads `deployment/pipeline.yaml` to get function definitions and global values (tenant, namespace).
-2.  Scans the `connectors/` directory at the project root to discover all defined IO connectors (sources/sinks), reading their `connector.yaml` and associated configuration files.
-3.  Consolidates all this information into a temporary `build/tmp/helm_values.yaml` file.
-4.  Uses Helm with the templates in `deployment/helm/` and the generated `helm_values.yaml` to produce three key artifacts:
-    *   `build/deploy/functionmesh-pipeline.yaml`: For deploying to Kubernetes using FunctionMesh.
-    *   `build/deploy/worker-pipeline.yaml`: For deploying to Kubernetes using a worker/job-based approach.
-    *   `deployment/local-dev/bootstrap.sh`: A shell script for setting up the pipeline in the local Docker Compose environment.
-5.  Makes the generated `deployment/local-dev/bootstrap.sh` script executable.
+The `/deployment` directory is organized as follows:
 
-This task ensures that all deployment manifests are consistently generated from the pipeline definitions.
+*   **`pipeline.yaml`**:
+    *   The central pipeline configuration file described above.
 
-## Local Development: `bootstrap.sh` and Docker Compose Setup
+*   **`/deployment/worker/`**:
+    *   Contains a standalone Helm chart for deploying functions and connectors to Kubernetes. This deployment method operates *without* relying on Pulsar Function Mesh.
+    *   **`Chart.yaml`**: Helm chart definition.
+    *   **`values.yaml`**: Helm values file. **This file is populated by the `generateManifests` task with data from `pipeline.yaml` and connector configurations.** It is not meant to be manually edited for defining the pipeline instances.
+    *   **`templates/`**: Contains Helm templates (e.g., `registration-job.yaml`) that define how functions and connectors are registered with Pulsar as part of a Kubernetes Job.
+    *   **Purpose**: Suitable for Kubernetes environments where Function Mesh is not available or desired. Resources are typically registered via a batch job.
 
-The `deployment/local-dev/bootstrap.sh` script is crucial for the local Docker Compose environment. It is **generated automatically** by the `./gradlew generateManifests` task. When executed (typically by the `docker-compose.yml` setup for the Pulsar service), it uses `pulsar-admin` commands to:
+*   **`/deployment/mesh/`**:
+    *   Contains a standalone Helm chart for deploying functions and connectors to Kubernetes *with* Pulsar Function Mesh.
+    *   **`Chart.yaml`**: Helm chart definition.
+    *   **`values.yaml`**: Helm values file. **This file is populated by the `generateManifests` task with data from `pipeline.yaml` and connector configurations.**
+    *   **`templates/`**: Contains Helm templates (e.g., `function-mesh.yaml`) that generate FunctionMesh custom resources.
+    *   **Purpose**: Ideal for Kubernetes environments where Function Mesh is installed, allowing for a more declarative and Kubernetes-native way of managing Pulsar functions and connectors.
 
-*   Create the configured Pulsar tenant and namespace.
-*   Deploy all functions defined in `pipeline.yaml`.
-*   Deploy all connectors discovered from the `connectors/` directory.
+*   **`/deployment/compose/`**:
+    *   Contains configurations for the Docker Compose-based local development setup.
+    *   **`docker-compose.yml`**: Defines the local services (Pulsar, etc.) and volume mounts for function JARs and connector NARs/JARs. This file is located in `/deployment/compose/`.
+    *   **`bootstrap.sh`**: **This script is auto-generated by the `generateManifests` task and placed in `/deployment/compose/bootstrap.sh`.** It contains `pulsar-admin` commands to provision all defined functions and connectors in the local Pulsar instance started by `docker-compose up`.
+    *   **`bootstrap.sh.tpl`**: A template file located in `/deployment/compose/bootstrap.sh.tpl`. It served as an initial structural reference for the auto-generated `bootstrap.sh` and is not directly used by the `generateManifests` task at runtime.
+    *   **`scripts/`**: Contains supporting scripts for the local Docker Compose environment, such as `load-test.sh` and `docker-pulsar-entrypoint.sh`.
 
-This script automates the entire pipeline setup within the local Pulsar container.
+## 4. `generateManifests` Gradle Task
 
-### Docker Compose Volume Mounts for `bootstrap.sh`
+The `./gradlew generateManifests` task is the central command for preparing deployment artifacts. It reads the pipeline and connector definitions and generates the necessary files for each deployment target.
 
-For `bootstrap.sh` to correctly deploy functions and custom connectors, their packaged files (JARs/NARs) and connector configuration files must be mounted into the Pulsar container at specific paths that the script expects. The `deployment/helm/templates/compose/bootstrap.sh.tpl` template defines these expected paths.
+*   **Inputs:**
+    *   `deployment/pipeline.yaml`
+    *   `connectors/**/connector.yaml` (and their referenced configuration files)
 
-**Ensure your `deployment/local-dev/docker-compose.yml` for the `pulsar` service includes the following volume mounts:**
+*   **Outputs:**
 
-1.  **Function JARs:**
-    *   **Source (Your Project):** `../functions/<function-name>/build/libs/<function-jar-name>.jar` (or wherever your function JAR is built)
-    *   **Target (Pulsar Container):** `/pulsar/functions/<function-jar-name>.jar`
-        *   *Example:* `- ../functions/my-processor/build/libs/my-processor-0.1.0.jar:/pulsar/functions/my-processor-0.1.0.jar`
-    *   The `bootstrap.sh.tpl` uses `{{ $func.jar }}` if present in `pipeline.yaml` (referring to the filename), or defaults to `/pulsar/functions/{{ $name }}.jar` if only `image` is specified (assuming a naming convention for local testing).
+    *   **Worker (Kubernetes - No Mesh):**
+        *   Populates a temporary Helm values file (e.g., `build/tmp/worker_values.yaml`) based on the inputs.
+        *   Generates Kubernetes manifests to `build/deploy/worker/generated-manifests.yaml` by running `helm template` with the `/deployment/worker/` chart and the generated values.
 
-2.  **Custom Connector Archives (NARs/JARs):**
-    *   **Source (Your Project):** `../connectors/<connector-id>/build/libs/<connector-archive-name>.nar` (or `.jar`)
-    *   **Target (Pulsar Container):** `/pulsar/connectors/<connector-archive-name>.nar` (or `.jar`)
-        *   *Example:* `- ../connectors/custom-kinesis-source/build/libs/custom-kinesis-connector.nar:/pulsar/connectors/custom-kinesis-connector.nar`
-    *   The `bootstrap.sh.tpl` uses `{{ $conn.archive }}` if present in `connector.yaml` (referring to the filename), or defaults to `/pulsar/connectors/{{ $name }}.nar` if only `image` is specified for a custom connector (assuming a naming convention).
+    *   **Mesh (Kubernetes - With Function Mesh):**
+        *   Populates a temporary Helm values file (e.g., `build/tmp/mesh_values.yaml`) based on the inputs.
+        *   Generates Kubernetes manifests to `build/deploy/mesh/generated-manifests.yaml` by running `helm template` with the `/deployment/mesh/` chart and the generated values.
 
-3.  **Connector Configuration Files:**
-    *   **Source (Your Project):** `../connectors/<connector-id>/<your-config-file.yaml>` (e.g., `config.dev.yaml`)
-    *   **Target (Pulsar Container):** `/pulsar/connectors/<connector-id>_config.yml`
-        *   *Example:* `- ../connectors/kafka-source-01/config.dev.yaml:/pulsar/connectors/kafka-source-01_config.yml`
-    *   The `bootstrap.sh.tpl` generates the `--source-config-file` path as `/pulsar/connectors/{{ $name }}_config.yml` (where `$name` is the connector ID). The mounted configuration file name inside the container **must match this pattern**.
+    *   **Compose (Local Docker Compose):**
+        *   Directly generates the `deployment/compose/bootstrap.sh` script. This script contains `pulsar-admin` commands to set up the functions and connectors using the Pulsar instance defined in `deployment/compose/docker-compose.yml`.
 
-**Note:** The exact source paths for JARs/NARs depend on your subproject build configurations. The target paths are conventions established by `bootstrap.sh.tpl`.
+## 5. Deployment Methods
 
-## Modifying the Pipeline
+### 5.1. Worker (Kubernetes - No Mesh)
 
-To add, remove, or change components in the pipeline:
-
-1.  **For Functions:**
-    *   Edit `deployment/pipeline.yaml` to add, remove, or modify function definitions and their configurations.
-    *   Ensure the function's JAR file is correctly built and its path is accurately reflected for local development volume mounts if using `bootstrap.sh`.
-2.  **For Connectors:**
-    *   Add or remove subdirectories within the `connectors/` directory at the project root.
-    *   To add a new connector: create a new directory (e.g., `connectors/new-connector/`), add `connector.yaml`, and its specific configuration file(s) (e.g., `config.dev.yaml`).
-    *   To remove a connector: delete its subdirectory from `connectors/`.
-    *   To modify a connector: edit its `connector.yaml` or associated configuration files within its directory. Ensure custom connector NAR/JAR files are built and configuration file paths are correct for local development mounts.
-3.  **Regenerate Manifests**: Run the Gradle task:
+1.  **Generate Manifests:**
     ```bash
     ./gradlew generateManifests
     ```
-    This command will update `build/deploy/functionmesh-pipeline.yaml`, `build/deploy/worker-pipeline.yaml`, and `deployment/local-dev/bootstrap.sh` based on your changes.
-4.  **Local Development**: If running locally via Docker Compose, `./gradlew composeUp` will automatically run `generateManifests` before starting the environment. If the environment is already running, you might need to restart it (`./gradlew composeDown && ./gradlew composeUp`) for `bootstrap.sh` changes to take effect, or manually execute relevant parts of `bootstrap.sh` inside the Pulsar container.
+2.  **Apply to Kubernetes:**
+    Ensure your `kubectl` context is configured for the target Kubernetes cluster where Pulsar is running.
+    ```bash
+    kubectl apply -f build/deploy/worker/generated-manifests.yaml
+    ```
+    This will typically create a Kubernetes Job that registers the functions and connectors with the Pulsar cluster.
+3.  **Prerequisites:**
+    *   A running Pulsar cluster accessible from your Kubernetes cluster.
+    *   `kubectl` configured to communicate with your Kubernetes cluster.
 
-## Generated Kubernetes Manifests
+### 5.2. Mesh (Kubernetes - With Function Mesh)
 
-The `generateManifests` task produces the following Kubernetes deployment artifacts:
+1.  **Generate Manifests:**
+    ```bash
+    ./gradlew generateManifests
+    ```
+2.  **Apply to Kubernetes:**
+    Ensure your `kubectl` context is configured for the target Kubernetes cluster.
+    ```bash
+    kubectl apply -f build/deploy/mesh/generated-manifests.yaml
+    ```
+    This will create FunctionMesh custom resources (e.g., `Function`, `Source`, `Sink`).
+3.  **Prerequisites:**
+    *   A running Pulsar cluster.
+    *   Pulsar Function Mesh installed and configured on your Kubernetes cluster.
+    *   `kubectl` configured.
 
-*   **`build/deploy/functionmesh-pipeline.yaml`**:
-    *   **Purpose**: Kubernetes manifest for deploying the entire pipeline using [FunctionMesh](https://functionmesh.io/). It defines `Function`, `Source`, and `Sink` Custom Resources.
-    *   **Usage**: Apply this file to a Kubernetes cluster where FunctionMesh is installed (`kubectl apply -f build/deploy/functionmesh-pipeline.yaml`).
+### 5.3. Compose (Local Docker Compose)
 
-*   **`build/deploy/worker-pipeline.yaml`**:
-    *   **Purpose**: Kubernetes manifest for deploying the pipeline as a series of Kubernetes Jobs. This is an alternative for environments where FunctionMesh is not available. Each job typically uses `pulsar-admin` to register a function or connector with the Pulsar cluster.
-    *   **Usage**: Apply this file to a Kubernetes cluster (`kubectl apply -f build/deploy/worker-pipeline.yaml`).
+1.  **Generate Bootstrap Script (if not running `composeUp`):**
+    The `generateManifests` task (which is a dependency of `composeUp`) will generate `deployment/compose/bootstrap.sh`.
+    ```bash
+    ./gradlew generateManifests
+    ```
+2.  **Start Services & Provision:**
+    The `composeUp` Gradle task handles running Docker Compose from the correct directory (`deployment/compose/`).
+    ```bash
+    # From the project root
+    ./gradlew composeUp 
+    ```
+    This command will:
+    1.  Ensure `generateManifests` is run, which creates/updates `deployment/compose/bootstrap.sh`.
+    2.  Start the services defined in `deployment/compose/docker-compose.yml` in detached mode.
+    The `bootstrap.sh` script is typically executed by an entrypoint defined in the `docker-compose.yml` for the Pulsar service, provisioning the functions and connectors.
+3.  **Volume Mounts:**
+    The `deployment/compose/docker-compose.yml` file is configured to mount necessary directories:
+    *   Custom connector NAR/JAR files (e.g., from `/connectors/.../build/libs/`) are mounted into `/pulsar/connectors/` inside the Pulsar container.
+    *   Function JAR files (e.g., from `/functions/.../build/libs/`) are mounted into `/pulsar/functions/` inside the Pulsar container.
+    The auto-generated `deployment/compose/bootstrap.sh` script assumes these JARs/NARs are available at these conventional paths.
 
-## Load Testing (`deployment/local-dev/scripts/load-test.sh`)
+## 6. Local Development Setup (`/deployment/compose/`)
 
-A script named `load-test.sh` is provided in `deployment/local-dev/scripts/` to send sample data to configured input sources. This helps in performing basic end-to-end tests.
+The `/deployment/compose/` directory is the definitive location for all Docker Compose-based local development configurations. The previously used `/deployment/local-dev/` directory has been removed and its relevant configurations and scripts consolidated into `/deployment/compose/`.
 
-**Prerequisites:**
-*   Local development environment (`docker-compose.yml`) is up and running.
-*   Pipeline components (connectors, functions) are provisioned via `bootstrap.sh`.
-*   Necessary client tools (AWS CLI for LocalStack, Kafka tools, `rabbitmqadmin`, `curl`, `pulsar-client`) are installed and configured in the environment where you run the script.
+Key files for local development:
+*   **`deployment/compose/docker-compose.yml`**: The Docker Compose file.
+*   **`deployment/compose/bootstrap.sh`**: The auto-generated provisioning script.
+*   **`deployment/compose/scripts/`**: Contains helper scripts for the local environment.
 
-**How to Run:**
-1.  Navigate to the script's directory: `cd deployment/local-dev/scripts`
-2.  Make it executable: `chmod +x load-test.sh`
-3.  Run: `./load-test.sh`
+Refer to the instructions in section "5.3. Compose (Local Docker Compose)" for running the local setup.
 
-The script will output information about its progress.
+## 7. Outdated Sections (Previously `/deployment/helm`)
+
+All prior documentation referring to a monolithic `/deployment/helm` umbrella chart and its specific templates (`function-mesh.yaml.tpl`, `registration-job.yaml.tpl`, etc.) is now outdated due to the refactoring into separate, standalone Helm charts in `/deployment/worker/` and `/deployment/mesh/`, and the direct script generation for `/deployment/compose/`.
