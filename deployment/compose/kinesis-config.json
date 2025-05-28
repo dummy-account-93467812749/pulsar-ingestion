@@ -1,0 +1,18 @@
+{
+  "awsEndpoint": "http://localstack:4566",
+  "dynamoEndpoint": "http://localstack:4566",
+  "cloudwatchEndpoint": "http://localstack:4566",
+  "awsRegion": "us-east-1",
+  "awsKinesisStreamName": "my-kinesis-stream",
+  "awsCredentialPluginName": "",
+  "awsCredentialPluginParam": {
+    "accessKey": "test",
+    "secretKey": "test"
+  },
+  "applicationName": "pulsar-kinesis-local",
+  "initialPositionInStream": "TRIM_HORIZON",
+  "checkpointInterval": 60000,
+  "backoffTime": 3000,
+  "numRetries": 3,
+  "receiveQueueSize": "1000%"
+}

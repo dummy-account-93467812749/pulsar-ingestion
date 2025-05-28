@@ -1,5 +1,5 @@
 name: azure-eventhub-amqp
-type: amqp # This type should map to the Pulsar AMQP 1.0 connector
+type: source
 topic: persistent://public/default/eventhub-amqp-input-topic
 configFile: config.amqp.yml
 parallelism: 1

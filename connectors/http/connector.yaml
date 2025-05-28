@@ -1,5 +1,6 @@
 name: http-netty
-type: netty # This type should map to the pulsar-io-netty.nar connector
+type: source
 topic: persistent://public/default/http-netty-input-topic
 configFile: config.http.yml
 parallelism: 1
+connectorType: netty

@@ -24,6 +24,7 @@ services:
       - pulsar_data:/pulsar/data
       - ./scripts/docker-pulsar-entrypoint.sh:/pulsar/docker-pulsar-entrypoint.sh:ro
       - ./bootstrap.sh:/pulsar/conf/bootstrap.sh:ro
+      - ./build:/pulsar/build
 
   zookeeper:
     image: bitnami/zookeeper:3.8

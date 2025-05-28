@@ -7,6 +7,7 @@ import org.gradle.kotlin.dsl.closureOf
 import org.yaml.snakeyaml.Yaml
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.io.File // Ensure this import is present
+import java.io.ByteArrayOutputStream 
 
 plugins {
     alias(libs.plugins.kotlin.jvm) apply false
@@ -104,7 +105,7 @@ tasks.register<JacocoReport>("coverageReport") {
 
 tasks.register("generateManifests") {
     group = "generation"
-    description = "Gathers pipeline data, prepares Helm values, and generates manifests."
+    description = "Gathers pipeline data, prepares Helm values, generates manifests, and compose bootstrap script."
 
     doLast {
         val yaml = Yaml()
@@ -115,7 +116,7 @@ tasks.register("generateManifests") {
             val cfg = yaml.load<Map<String, Any>>(pipelineFile.readText())
             (cfg["functions"] as? Map<String, Any>)?.toMutableMap() ?: mutableMapOf()
         } else {
-            logger.warn("deployment/pipeline.yaml not found. Using defaults.")
+            logger.warn("deployment/pipeline.yaml not found. Using defaults for functions.")
             mutableMapOf()
         }
 
@@ -124,7 +125,8 @@ tasks.register("generateManifests") {
         val tenant = rootCfg["tenant"] as? String ?: "default-tenant"
         val namespace = rootCfg["namespace"] as? String ?: "default-namespace"
 
-        val connectorEntries = mutableListOf<Map<String, Any>>()
+        // Fix 1: Allow null values in the map for optional connector properties
+        val connectorEntries = mutableListOf<Map<String, Any?>>()
         project.file("connectors").takeIf(File::isDirectory)?.listFiles()?.forEach { dir ->
             if (!dir.isDirectory) return@forEach
             val yml = dir.resolve("connector.yaml")
@@ -139,15 +141,19 @@ tasks.register("generateManifests") {
                 val specific = (cfg["configFile"] as? String)
                     ?.let { dir.resolve(it) }
                     ?.takeIf(File::exists)
-                    ?.let { yaml.load<Map<String, Any>>(it.readText()) }
+                    ?.let { yaml.load<Map<String, Any>>(it.readText()) } // This is Map<String, Any>
                     ?: emptyMap<String, Any>()
+
+                // This mapOf will correctly infer Map<String, Any?> because some values can be null
                 connectorEntries += mapOf(
-                    "name" to dir.name,
-                    "type" to cfg["type"]?.toString().orEmpty(),
-                    "image" to cfg["image"]?.toString().orEmpty(),
-                    "topic" to cfg["topic"]?.toString().orEmpty(),
-                    "config" to specific,
-                    "isCustom" to dir.resolve("build.gradle.kts").exists()
+                    "name" to dir.name, // String (non-null)
+                    "type" to cfg["type"]?.toString().orEmpty(), // String (non-null)
+                    "image" to cfg["image"]?.toString().orEmpty(), // String (non-null, but could be empty)
+                    "topic" to cfg["topic"]?.toString().orEmpty(), // String (non-null, but could be empty)
+                    "config" to specific, // Map<String, Any> (non-null map, values are Any)
+                    "isCustom" to dir.resolve("build.gradle.kts").exists(), // Boolean (non-null)
+                    "archive" to cfg["archive"]?.toString(), // String? (nullable)
+                    "connectorType" to cfg["connectorType"]?.toString() // String? (nullable)
                 )
             } catch (e: Exception) {
                 logger.error("Error parsing ${yml.absolutePath}: ${e.message}")
@@ -156,89 +162,86 @@ tasks.register("generateManifests") {
 
         println("Found ${functionsMap.size} functions and ${connectorEntries.size} connectors.")
 
-        @Suppress("UNCHECKED_CAST")
         val adaptedFunctionsForMesh = functionsMap.mapValues { (_, funcValue) ->
+            @Suppress("UNCHECKED_CAST") // funcValue is Any, casting to Map
             val func = funcValue as Map<String, Any>
             val newFunc = func.toMutableMap()
-
             val inputsValue = func["inputs"]
             if (inputsValue != null) {
                 if (inputsValue is List<*> && inputsValue.isNotEmpty()) {
-                    newFunc["input"] = inputsValue.first().toString()
+                    newFunc["input"] = inputsValue.first()?.toString() ?: "" // Handle null element
                 } else if (inputsValue is String) {
                     newFunc["input"] = inputsValue
                 }
-                if (newFunc.containsKey("input")) { // Only remove if 'input' was successfully set from 'inputs'
+                if (newFunc.containsKey("input")) {
                     newFunc.remove("inputs")
                 }
             } else if (func.containsKey("input")) {
-                newFunc["input"] = func["input"].toString() // Ensure it's a string
+                newFunc["input"] = func["input"]?.toString() ?: "" // Handle null
             }
-
             val outputValue = func["output"]
-            if (func.containsKey("output")) { // Check if the key "output" exists
+            if (func.containsKey("output")) {
                 if (outputValue != null) {
-                    newFunc["outputs"] = outputValue // Pass the value if not null
+                    newFunc["outputs"] = outputValue
                 }
-                // If outputValue is null, 'outputs' is not set, Helm's 'if $func.outputs' handles it
-                newFunc.remove("output") // Remove the original "output" key
+                newFunc.remove("output")
             }
-            newFunc
+            newFunc // This will be MutableMap<String, Any?> if any values became null
         }
 
-        @Suppress("UNCHECKED_CAST")
-        val adaptedConnectorsForMesh = connectorEntries.associateBy { it["name"].toString() }.mapValues { (_, connValue) ->
-            val conn = connValue as Map<String, Any> // Cast is okay due to associateBy structure
+        // connectorEntries is List<Map<String, Any?>>
+        // it["name"] is Any?, but dir.name should make it String. Use safe cast or default.
+        // connValue will be Map<String, Any?>
+        val adaptedConnectorsForMesh = connectorEntries.associateBy { it["name"] as String }.mapValues { (_, connValue) ->
+            // Fix 2: connValue is already Map<String, Any?>, no need to cast to Map<String, Any>
+            val conn = connValue // conn is Map<String, Any?>
+
+            // This mapOf will correctly create a Map<String, Any?>
             mapOf(
-                "source" to (conn["type"]?.toString()?.lowercase() == "source"),
-                "name" to conn["name"],
-                "image" to conn["image"],
-                "output" to conn["topic"],
-                "configRef" to "${conn["name"]}-connector-config"
+                "source" to (conn["type"]?.toString()?.lowercase() == "source"), // Boolean
+                "name" to conn["name"], // Should be String from dir.name
+                "image" to conn["image"], // String?
+                "output" to conn["topic"], // String?
+                "configRef" to "${conn["name"]}-connector-config" // String interpolation handles null by inserting "null"
             )
         }
 
         // --- Worker Helm Generation ---
         val workerChartDir = project.file("deployment/worker")
         val workerOutputDir = project.buildDir.resolve("deploy/worker").apply { mkdirs() }
+        // connectorEntries.associateBy is fine, it will be Map<String, Map<String, Any?>>
         val workerHelmValues = mapOf(
             "tenant" to tenant,
             "namespace" to namespace,
-            "functions" to functionsMap, // Using the original functionsMap
-            "connectors" to connectorEntries.associateBy { it["name"].toString() } // Using connectorEntries, adapted as a map by name
+            "functions" to functionsMap, // functionsMap is Map<String, Any>, where Any can be Map<String,Any>
+            "connectors" to connectorEntries.associateBy { it["name"] as String }
         )
         val workerValuesFile = project.buildDir.resolve("tmp/worker_values.yaml").apply { parentFile.mkdirs() }
         workerValuesFile.writeText(yaml.dump(workerHelmValues))
         println("Worker Helm values written to ${workerValuesFile.absolutePath}")
 
         val workerManifestFile = workerOutputDir.resolve("generated-manifests.yaml")
-        val workerOutputBaos = java.io.ByteArrayOutputStream()
-        val workerErrorBaos = java.io.ByteArrayOutputStream()
-        val workerExecResult = project.exec {
+        project.exec {
             executable = "helm"
             args = listOf("template", "worker-release", workerChartDir.absolutePath, "--values", workerValuesFile.absolutePath)
-            standardOutput = workerOutputBaos
-            errorOutput = workerErrorBaos
-            isIgnoreExitValue = true // Handle errors manually
-        }
-
-        if (workerExecResult.exitValue != 0) {
-            logger.error("Worker Helm template command failed. Exit code: ${workerExecResult.exitValue}")
-            logger.error("Worker Helm stderr: ${workerErrorBaos.toString().trim()}")
-            workerManifestFile.writeText("# Helm generation failed\n# Error: ${workerErrorBaos.toString().trim()}")
-        } else {
-            workerManifestFile.writeText(workerOutputBaos.toString())
+            standardOutput = workerManifestFile.outputStream()
+            errorOutput = System.err
+            isIgnoreExitValue = true
+        }.takeIf { it.exitValue == 0 }?.let {
             println("Worker manifests written to ${workerManifestFile.absolutePath}")
-        }
+        } ?: logger.error("Worker Helm template command failed. See console for errors. Manifest file might be incomplete or contain error messages.")
+
 
         // --- Mesh Helm Generation ---
         val meshChartDir = project.file("deployment/mesh")
         val meshOutputDir = project.buildDir.resolve("deploy/mesh").apply { mkdirs() }
+        // adaptedFunctionsForMesh can be Map<String, Map<String, Any?>>
+        // adaptedConnectorsForMesh is Map<String, Map<String, Any?>>
         val meshHelmValues = mapOf(
             "tenant" to tenant,
             "namespace" to namespace,
             "mesh" to mapOf(
-                "enabled" to true, // Assuming 'enabled' is a required field for the mesh chart
+                "enabled" to true,
                 "functions" to adaptedFunctionsForMesh,
                 "connectors" to adaptedConnectorsForMesh
             )
@@ -248,174 +251,204 @@ tasks.register("generateManifests") {
         println("Mesh Helm values written to ${meshValuesFile.absolutePath}")
 
         val meshManifestFile = meshOutputDir.resolve("generated-manifests.yaml")
-        val meshOutputBaos = java.io.ByteArrayOutputStream()
-        val meshErrorBaos = java.io.ByteArrayOutputStream()
-        val meshExecResult = project.exec {
+        project.exec {
             executable = "helm"
             args = listOf("template", "mesh-release", meshChartDir.absolutePath, "--values", meshValuesFile.absolutePath)
-            standardOutput = meshOutputBaos
-            errorOutput = meshErrorBaos
-            isIgnoreExitValue = true // Handle errors manually
-        }
-
-        if (meshExecResult.exitValue != 0) {
-            logger.error("Mesh Helm template command failed. Exit code: ${meshExecResult.exitValue}")
-            logger.error("Mesh Helm stderr: ${meshErrorBaos.toString().trim()}")
-            meshManifestFile.writeText("# Helm generation failed\n# Error: ${meshErrorBaos.toString().trim()}")
-        } else {
-            meshManifestFile.writeText(meshOutputBaos.toString())
+            standardOutput = meshManifestFile.outputStream()
+            errorOutput = System.err
+            isIgnoreExitValue = true
+        }.takeIf { it.exitValue == 0 }?.let {
             println("Mesh manifests written to ${meshManifestFile.absolutePath}")
-        }
+        } ?: logger.error("Mesh Helm template command failed. See console for errors. Manifest file might be incomplete or contain error messages.")
+
 
         // --- Compose Bootstrap Script Generation ---
-        val bsOut = project.file("deployment/compose/bootstrap.sh")
+
+        val composeDir = project.file("deployment/compose")
+        val connectorConfigsOutDir = composeDir.resolve("build").apply { mkdirs() }
+        val inContainerConnectorConfigsPath = "/pulsar/build/" // For connector YAML configs. Ends with a slash.
+
+        val bsOut = composeDir.resolve("bootstrap.sh")
         val scriptContent = StringBuilder()
 
         scriptContent.appendLine("#!/usr/bin/env bash")
-        scriptContent.appendLine("set -e") // Exit on error
+        scriptContent.appendLine("set -e")
         scriptContent.appendLine("")
-        scriptContent.appendLine("ADMIN_CMD=\"pulsar-admin\"")
+        scriptContent.appendLine("# Command for admin operations executed directly (tenant, namespace, readiness check)")
+        scriptContent.appendLine("ADMIN_CMD_LOCAL=\"pulsar-admin\"")
+        scriptContent.appendLine("# Command for admin operations executed via docker exec (connectors, functions)")
+        scriptContent.appendLine("PULSAR_CONTAINER_NAME=\"compose-pulsar-1\"") // Define container name for messages and exec
+        scriptContent.appendLine("ADMIN_CMD_DOCKER_EXEC=\"docker exec \${PULSAR_CONTAINER_NAME} bin/pulsar-admin\"")
+        scriptContent.appendLine("")
         scriptContent.appendLine("TENANT=\"${tenant}\"")
         scriptContent.appendLine("NAMESPACE=\"${namespace}\"")
         scriptContent.appendLine("")
-        scriptContent.appendLine("echo \"Waiting for Pulsar to be ready...\"")
-        scriptContent.appendLine("until \${ADMIN_CMD} tenants get \${TENANT} > /dev/null 2>&1; do")
+        scriptContent.appendLine("echo \"Waiting for Pulsar to be ready (using '\${ADMIN_CMD_LOCAL}')...\"")
+        scriptContent.appendLine("until \${ADMIN_CMD_LOCAL} tenants get \${TENANT} > /dev/null 2>&1; do") // Use local admin
         scriptContent.appendLine("  echo -n \".\"")
         scriptContent.appendLine("  sleep 5")
         scriptContent.appendLine("done")
         scriptContent.appendLine("echo \"Pulsar is ready.\"")
         scriptContent.appendLine("")
-        scriptContent.appendLine("echo \"Creating tenant '\${TENANT}' if it doesn't exist...\"")
-        scriptContent.appendLine("\${ADMIN_CMD} tenants create \${TENANT} --allowed-clusters standalone || echo \"Tenant '\${TENANT}' already exists or error creating.\"")
+        scriptContent.appendLine("echo \"Creating tenant '\${TENANT}' if it doesn't exist (using '\${ADMIN_CMD_LOCAL}')...\"")
+        scriptContent.appendLine("\${ADMIN_CMD_LOCAL} tenants create \${TENANT} --allowed-clusters standalone || echo \"Tenant '\${TENANT}' already exists or error creating.\"") // Use local admin
         scriptContent.appendLine("")
-        scriptContent.appendLine("echo \"Creating namespace '\${TENANT}/\${NAMESPACE}' if it doesn't exist...\"")
-        scriptContent.appendLine("\${ADMIN_CMD} namespaces create \${TENANT}/\${NAMESPACE} --clusters standalone || echo \"Namespace '\${TENANT}/\${NAMESPACE}' already exists or error creating.\"")
+        scriptContent.appendLine("echo \"Creating namespace '\${TENANT}/\${NAMESPACE}' if it doesn't exist (using '\${ADMIN_CMD_LOCAL}')...\"")
+        scriptContent.appendLine("\${ADMIN_CMD_LOCAL} namespaces create \${TENANT}/\${NAMESPACE} --clusters standalone || echo \"Namespace '\${TENANT}/\${NAMESPACE}' already exists or error creating.\"") // Use local admin
         scriptContent.appendLine("")
 
-        // Connector Deployment
-        scriptContent.appendLine("# --- Deploy Connectors ---")
-        connectorEntries.forEach { connectorEntry ->
+        scriptContent.appendLine("# --- Deploy Connectors (using '\${ADMIN_CMD_DOCKER_EXEC}') ---")
+        connectorEntries.forEach { connectorEntry -> // connectorEntry is Map<String, Any?>
             val name = connectorEntry["name"] as String
-            val type = connectorEntry["type"] as? String ?: "unknown" // source or sink
-            val image = connectorEntry["image"] as? String
-            val topic = connectorEntry["topic"] as? String // Used as output for source, input for sink
+            val connectorCategory = connectorEntry["type"] as? String ?: "unknown"
             @Suppress("UNCHECKED_CAST")
             val config = connectorEntry["config"] as? Map<String, Any> ?: emptyMap()
             val isCustom = connectorEntry["isCustom"] as? Boolean ?: false
+            val archiveName = connectorEntry["archive"] as? String
+            val connectorTypeForBuiltIn = (connectorEntry["connectorType"] as? String) ?: name
+            val topic = connectorEntry["topic"] as? String
 
-            // Convert config map to JSON string manually for simplicity
-            // A proper JSON library would be more robust for complex configs
-            val configJson = config.entries.joinToString(prefix = "{", postfix = "}", separator = ",") { entry ->
-                "\\\"${entry.key}\\\":${if (entry.value is String) "\\\"${entry.value}\\\"" else entry.value.toString()}"
-            }
-
-            val connectorCmd = when (type.lowercase()) {
-                "source" -> "sources"
-                "sink" -> "sinks"
+            // MODIFICATION 1: Use singular "source" and "sink" for the command part
+            val connectorAdminSubCommand = when (connectorCategory.lowercase()) {
+                "source" -> "source" // Singular
+                "sink" -> "sink"     // Singular
                 else -> {
-                    logger.warn("Unknown connector type '$type' for connector '$name'. Skipping.")
+                    logger.warn("Unknown connector category '$connectorCategory' for connector '$name'. Skipping bootstrap deployment.")
                     return@forEach
                 }
             }
 
-            scriptContent.appendLine("echo \"Deploying ${type.lowercase()} connector '${name}'...\"")
-            val cmd = mutableListOf("\${ADMIN_CMD}", connectorCmd, "create")
+            val configFileName = "${name}-config.yaml" // Does not start with a slash
+            val localConfigFile = connectorConfigsOutDir.resolve(configFileName)
+            if (config.isNotEmpty()) {
+                localConfigFile.writeText(yaml.dump(config))
+                println("Connector config for '${name}' written to ${localConfigFile.absolutePath}")
+            } else {
+                println("Connector '${name}' has no specific configuration to write to a file.")
+            }
+
+            scriptContent.appendLine("echo \"Deploying ${connectorCategory.lowercase()} connector '${name}'...\"")
+            // Use ADMIN_CMD_DOCKER_EXEC for deploying connectors and the modified connectorAdminSubCommand
+            val cmd = mutableListOf("\${ADMIN_CMD_DOCKER_EXEC}", connectorAdminSubCommand, "create")
             cmd.add("--tenant \${TENANT}")
             cmd.add("--namespace \${NAMESPACE}")
             cmd.add("--name \"${name}\"")
 
-            val connectorTypeFromConfig = connectorEntry["type"] as? String // this 'type' is 'source' or 'sink'
-            // val actualConnectorType = image // this 'image' field from connector.yaml is NOT the connector type for built-ins
-
             if (isCustom) {
-                // For custom connectors, 'image' field in connector.yaml might hold the archive name or be part of it.
-                // We'll prefer a convention <name>.nar if image is not an explicit archive path.
-                // The 'archive' field in connector.yaml would be even better if it existed.
-                // For bootstrap.sh, we assume the NAR is named <name>.nar and is in /pulsar/connectors/
-                cmd.add("--archive \"/pulsar/connectors/${name}.nar\"")
+                val image = connectorEntry["image"] as? String
+                val narFile = archiveName ?: image?.takeIf { it.endsWith(".nar") && it.isNotBlank() } ?: "${name}.nar"
+                cmd.add("--archive \"/pulsar/connectors/${narFile}\"")
             } else {
-                // For non-custom (built-in) connectors, the connector's 'name' (e.g., "kafka", "kinesis") is its type.
-                if (connectorTypeFromConfig?.lowercase() == "source") {
-                    cmd.add("--source-type \"${name}\"")
-                } else if (connectorTypeFromConfig?.lowercase() == "sink") {
-                    cmd.add("--sink-type \"${name}\"")
+                if (connectorCategory.lowercase() == "source") {
+                    cmd.add("--source-type \"${connectorTypeForBuiltIn}\"")
+                } else if (connectorCategory.lowercase() == "sink") {
+                    cmd.add("--sink-type \"${connectorTypeForBuiltIn}\"")
                 } else {
-                    logger.warn("Connector '${name}' is not custom and has an unknown type ('${connectorTypeFromConfig}'). Cannot determine --source-type or --sink-type.")
+                     logger.warn("Connector '${name}' is not custom and has an unknown category ('${connectorCategory}'). Cannot determine --source-type or --sink-type.")
                 }
             }
 
-            if (connectorTypeFromConfig?.lowercase() == "source" && topic != null) cmd.add("--topic-name \"${topic}\"") // Source's output topic
-            if (connectorTypeFromConfig?.lowercase() == "sink" && topic != null) cmd.add("--inputs \"${topic}\"") // Sink's input topic
+            // MODIFICATION 2: Use --destination-topic-name for sources
+            if (connectorCategory.lowercase() == "source" && !topic.isNullOrBlank()) {
+                cmd.add("--destination-topic-name \"${topic}\"")
+            }
+            if (connectorCategory.lowercase() == "sink" && !topic.isNullOrBlank()) {
+                cmd.add("--inputs \"${topic}\"")
+            }
 
             if (config.isNotEmpty()) {
-                cmd.add("--${type.lowercase()}-config '${configJson}'")
+                // MODIFICATION 3: Fix potential double slash by ensuring inContainerConnectorConfigsPath ends with /
+                // and configFileName does not start with /.
+                // Given inContainerConnectorConfigsPath = "/pulsar/build/" (ends with /)
+                // and configFileName = "${name}-config.yaml" (does not start with /)
+                // Concatenating them directly is correct.
+                val inContainerConfigFilePath = "\"${inContainerConnectorConfigsPath}${configFileName}\""
+                cmd.add("--${connectorCategory.lowercase()}-config-file ${inContainerConfigFilePath}") // e.g. --source-config-file
             }
-            // Add other common parameters like parallelism if available in connectorEntry
-            // cmd.add("--parallelism X")
 
             scriptContent.appendLine(cmd.joinToString(separator = " \\\n  ") + " || echo \"Failed to create connector '${name}', it might already exist.\"")
             scriptContent.appendLine("")
         }
+        if (connectorEntries.isNotEmpty()) {
+             scriptContent.appendLine("echo \"NOTE: Ensure connector config files from 'deployment/compose/build/' are mounted to '${inContainerConnectorConfigsPath}' in your Pulsar container (\${PULSAR_CONTAINER_NAME}).\"")
+             scriptContent.appendLine("echo \"And custom connector NARs are mounted to '/pulsar/connectors/' in \${PULSAR_CONTAINER_NAME}.\"")
+             scriptContent.appendLine("")
+        }
 
-        // Function Deployment
-        scriptContent.appendLine("# --- Deploy Functions ---")
-        functionsMap.forEach { (name, funcValue) ->
+        scriptContent.appendLine("# --- Deploy Functions (using '\${ADMIN_CMD_DOCKER_EXEC}') ---")
+        functionsMap.forEach { (name, funcValue) -> // funcValue is Any
             @Suppress("UNCHECKED_CAST")
-            val func = funcValue as Map<String, Any>
+            val func = funcValue as Map<String, Any> // func is Map<String, Any>
             val className = func["className"] as? String
-            // val image = func["image"] as? String // This is a Docker image, not the JAR name for bootstrap.sh
             val output = func["output"] as? String
             val parallelism = func["parallelism"] as? Int
+            val jarFileName = func["jar"] as? String ?: "${name}.jar"
 
-            // Handle inputs: could be a single string or a list of strings
-            val rawInputs = func["inputs"] ?: func["input"]
-            val inputsString = when (rawInputs) {
-                is List<*> -> (rawInputs as List<String>).joinToString(",")
-                is String -> rawInputs
+            val rawInputs = func["inputs"] ?: func["input"] // rawInputs is Any?
+            val inputsString = when (val currentRawInputs = rawInputs) {
+                is List<*> -> currentRawInputs.mapNotNull { it?.toString() }.joinToString(",")
+                is String -> currentRawInputs
                 else -> null
             }
 
             @Suppress("UNCHECKED_CAST")
             val userConfig = func["userConfig"] as? Map<String, Any> ?: emptyMap()
-
-            // Convert userConfig map to JSON string manually
-            val userConfigJson = userConfig.entries.joinToString(prefix = "{", postfix = "}", separator = ",") { entry ->
-                "\\\"${entry.key}\\\":${if (entry.value is String) "\\\"${entry.value}\\\"" else entry.value.toString()}"
+            val userConfigJson = if (userConfig.isNotEmpty()) {
+                userConfig.entries.joinToString(prefix = "{", postfix = "}", separator = ",") { entry ->
+                    val key = "\\\"${entry.key}\\\""
+                    val value = when (val v = entry.value) {
+                        is String -> "\\\"${v.replace("\"", "\\\"").replace("'", "\\'")}\\\""
+                        is Number, is Boolean -> v.toString()
+                        null -> "null" // Handle explicit nulls in userConfig if any
+                        else -> "\\\"${v.toString().replace("\"", "\\\"").replace("'", "\\'")}\\\""
+                    }
+                    "$key:$value"
+                }
+            } else {
+                null
             }
 
             scriptContent.appendLine("echo \"Deploying function '${name}'...\"")
-            val cmd = mutableListOf("\${ADMIN_CMD}", "functions", "create")
+            val cmd = mutableListOf("\${ADMIN_CMD_DOCKER_EXEC}", "functions", "create")
             cmd.add("--tenant \${TENANT}")
             cmd.add("--namespace \${NAMESPACE}")
             cmd.add("--name \"${name}\"")
 
             if (className != null) cmd.add("--classname \"${className}\"")
-            // For bootstrap.sh, JAR is assumed to be <function-name>.jar in /pulsar/functions/
-            cmd.add("--jar \"/pulsar/functions/${name}.jar\"")
+            cmd.add("--jar \"/pulsar/functions/${jarFileName}\"")
 
             if (inputsString != null && inputsString.isNotBlank()) {
                 cmd.add("--inputs \"${inputsString}\"")
             }
-            if (output != null) cmd.add("--output \"${output}\"")
+            if (output != null && output.isNotBlank()) cmd.add("--output \"${output}\"")
             if (parallelism != null) cmd.add("--parallelism ${parallelism}")
-            if (userConfig.isNotEmpty()) {
+            if (userConfigJson != null) {
                 cmd.add("--user-config '${userConfigJson}'")
             }
-            cmd.add("--auto-ack true") // Common default
+            cmd.add("--auto-ack true")
 
             scriptContent.appendLine(cmd.joinToString(separator = " \\\n  ") + " || echo \"Failed to create function '${name}', it might already exist.\"")
             scriptContent.appendLine("")
         }
+         if (functionsMap.isNotEmpty()) {
+             scriptContent.appendLine("echo \"NOTE: Ensure function JARs are mounted to '/pulsar/functions/' in your Pulsar container (\${PULSAR_CONTAINER_NAME}).\"")
+             scriptContent.appendLine("")
+        }
 
         scriptContent.appendLine("echo \"------------------------------------------\"")
-        scriptContent.appendLine("echo \"Pulsar pipeline bootstrap complete.\"")
+        scriptContent.appendLine("echo \"Pulsar pipeline bootstrap complete for Compose.\"")
         scriptContent.appendLine("echo \"Tenant: \${TENANT}, Namespace: \${NAMESPACE}\"")
-        scriptContent.appendLine("echo \"Deployed functions and connectors.\"")
+        scriptContent.appendLine("echo \"Review notes above for required Docker volume mounts into \${PULSAR_CONTAINER_NAME}.\"")
         scriptContent.appendLine("echo \"------------------------------------------\"")
 
         bsOut.writeText(scriptContent.toString())
         bsOut.setExecutable(true)
         println("Compose bootstrap script written to ${bsOut.absolutePath}")
+        println("Connector configuration files generated in ${connectorConfigsOutDir.absolutePath}")
+        println("IMPORTANT: Update your docker-compose.yml to mount:")
+        println("  - '${connectorConfigsOutDir.absolutePath}' to '${inContainerConnectorConfigsPath}' (for connector configs)")
+        println("  - Your connector NAR files to '/pulsar/connectors/' (for custom connectors)")
+        println("  - Your function JAR files to '/pulsar/functions/' (for functions)")
     }
 }
 
