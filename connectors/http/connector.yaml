@@ -1,7 +1,5 @@
-name: http
-type: source
-image: "" # Assuming it's a custom-code connector for now
-topic: persistent://public/default/http-topic # Replace with actual topic if known, otherwise use a placeholder
-configFile: config.sample.yml
-secretKeys: [] # Add any secret keys if applicable
+name: http-netty
+type: netty # This type should map to the pulsar-io-netty.nar connector
+topic: persistent://public/default/http-netty-input-topic
+configFile: config.http.yml
 parallelism: 1

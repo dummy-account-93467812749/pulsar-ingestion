@@ -7,7 +7,7 @@ This document outlines the architecture of the Pulsar Ingestion project, focusin
 *   **Modularity:** Connectors and functions are designed as independent modules.
 *   **Extensibility:** The framework allows for easy addition of new source connectors and processing functions.
 *   **Scalability:** Leveraging Pulsar's native scalability for message ingestion and processing.
-*   **Testability:** Emphasis on unit and integration testing for each component.
+*   **Testability:** Emphasis on unit and integration testing for each component. Integration tests for all connectors are centralized in the `connectors/test/` directory.
 
 ## System Components
 
@@ -18,13 +18,13 @@ The system primarily consists of:
 
 ## Source Connectors
 
-This section details the source connectors developed for ingesting data from different systems. Connectors have been refactored to a new standard configuration schema, detailed in the main project `README.md`. Each connector resides in its own directory under `connectors/<connector-id>/` and includes a `connector.yaml` for Pulsar integration and one or more connector-specific configuration files (e.g., `config.dev.yml`). These individual connector definitions are discovered and processed by the central `./gradlew generateManifests` task to produce deployment artifacts.
+This section details the source connectors developed for ingesting data from different systems. Connectors have been refactored to a new standard configuration schema, detailed in the main project `README.md`. Each connector resides in its own directory under `connectors/<connector-id>/` and includes a `connector.yaml` for Pulsar integration and a primary connector-specific configuration file (e.g., `config.amqp.yml`, `config.http.yml`, or `config.sample.yml` for others). These individual connector definitions are discovered and processed by the central `./gradlew generateManifests` task to produce deployment artifacts.
 
 ### 1. HTTP Connector
 
 *   **Purpose:** Consumes data from a specified HTTP endpoint and ingests it into a Pulsar topic.
-*   **Status:** Custom connector, source code and tests maintained.
-*   **Configuration:** Follows the new standard schema: `connectors/http/connector.yaml` and `connectors/http/config.sample.yml`.
+*   **Status:** Uses Pulsar's native Netty source connector, configured for HTTP. This is a configuration-only connector from the project's perspective.
+*   **Configuration:** Configuration is defined in `connectors/http/connector.yaml` (to specify the `netty` type and Pulsar topic) and `connectors/http/config.http.yml` (for Netty HTTP server settings like host and port). Note: This connector now listens for incoming HTTP POST requests, a change from previous polling behavior.
 
 ### 2. Kafka Connector
 
@@ -35,8 +35,8 @@ This section details the source connectors developed for ingesting data from dif
 ### 3. Azure Event Hub Connector
 
 *   **Purpose:** Consumes events from Azure Event Hubs and ingests them into Pulsar topics.
-*   **Status:** Custom connector, source code and tests maintained.
-*   **Configuration:** Follows the new standard schema: `connectors/azure-eventhub/connector.yaml` and `connectors/azure-eventhub/config.sample.yml`.
+*   **Status:** Uses a standard Pulsar AMQP 1.0 source connector. This is a configuration-only connector from the project's perspective.
+*   **Configuration:** Configuration is defined in `connectors/azure-eventhub/connector.yaml` (to specify the `amqp` type and Pulsar topic) and `connectors/azure-eventhub/config.amqp.yml` (for AMQP server details, authentication, and Event Hub source address).
 
 ### 4. Pulsar Connector
 
