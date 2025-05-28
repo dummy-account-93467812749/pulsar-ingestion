@@ -1,15 +1,17 @@
-# AWS Kinesis Stream Name
-kinesisStreamName: "your-kinesis-stream"
-# AWS Region
-awsRegion: "us-east-1"
-# AWS Credentials - these will be injected via secretKeys
-# awsAccessKeyId: "${AWS_ACCESS_KEY_ID}"
-# awsSecretAccessKey: "${AWS_SECRET_ACCESS_KEY}"
-# Optional: Starting position (LATEST, TRIM_HORIZON, AT_TIMESTAMP)
-# initialPositionInStream: "LATEST"
-# Optional: Application name for Kinesis consumer (helps in tracking progress)
-# applicationName: "pulsar-kinesis-source-app"
-# Optional: CloudWatch endpoint for metrics, if different from default
-# cloudwatchEndpoint: ""
-# Optional: Kinesis endpoint for VPC or custom endpoints
-# kinesisEndpoint: ""
+awsEndpoint:        "http://localstack:4566"
+dynamoEndpoint:     "http://localstack:4566"
+cloudwatchEndpoint: "http://localstack:4566"
+
+awsRegion:            "us-east-1"
+awsKinesisStreamName: "my-kinesis-stream"
+
+awsCredentialPluginName:  ""
+awsCredentialPluginParam: "{\"accessKey\":\"test\",\"secretKey\":\"test\"}"
+
+applicationName:         "pulsar-kinesis-local"
+initialPositionInStream: "TRIM_HORIZON"
+
+checkpointInterval: 60000
+backoffTime:        3000
+numRetries:         3
+receiveQueueSize:   1000%                                                                                                                                                                                                                                 

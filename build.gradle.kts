@@ -38,52 +38,6 @@ subprojects {
         val integrationTest by sourceSets.creating {
             compileClasspath += sourceSets["main"].output
             runtimeClasspath += sourceSets["main"].output
-
-            // Standard path within project
-            java.srcDir("src/integrationTest/java")
-            kotlin.srcDir("src/integrationTest/kotlin")
-            resources.srcDir("src/integrationTest/resources")
-
-            // Check if this project is a connector that uses the new centralized test structure
-            // Project names are like "connectors-azure-eventhub-source", "connectors-http-source" etc. from settings.gradle.kts
-            // We need to extract "azure-eventhub", "http" from project.name
-            val projectName = project.name
-            var connectorName = ""
-            if (project.path.startsWith(":connectors:")) {
-                // Assuming project name format is "connectors-<connectorId>-source" or "<connectorId>-source" if group is "connectors"
-                // Or if project.name is "azure-eventhub-source" when project path is ":connectors:azure-eventhub-source"
-                // Let's try to be robust: remove common suffixes and prefixes if necessary.
-                // A simpler way if using project.name directly from a path like :connectors:azure-eventhub-source
-                // project.name would be "azure-eventhub-source"
-                connectorName = projectName.removeSuffix("-source") // "azure-eventhub"
-                                       .removeSuffix("-connector") // common pattern
-                                       .removePrefix("pulsar-io-") // common pattern
-                                       .removePrefix("connectors-") // if group not used in name
-
-                 // If project.path is ":connectors:azure-eventhub", project.name is "azure-eventhub"
-                if (project.parent?.name == "connectors" && project.name.contains("-source")){
-                     connectorName = project.name.removeSuffix("-source")
-                } else if (project.parent?.name == "connectors") {
-                     connectorName = project.name
-                }
-
-
-                // Refined logic based on typical project path structure like ":connectors:azure-eventhub-source"
-                if (project.path.count { it == ':' } == 2 && project.path.startsWith(":connectors:")) {
-                    connectorName = project.name.removeSuffix("-source")
-                }
-
-
-                val centralizedTestDir = project.rootDir.resolve("connectors/test/$connectorName")
-                if (centralizedTestDir.exists()) {
-                    project.logger.lifecycle("Project ${project.path} is a connector. Adding centralized integration test path: ${centralizedTestDir.path} for connector name: $connectorName")
-                    kotlin.srcDir(centralizedTestDir)
-                    // If resources are also centralized, add:
-                    // resources.srcDir(project.rootDir.resolve("connectors/test/$connectorName/resources"))
-                } else {
-                    project.logger.lifecycle("Project ${project.path} is a connector. Centralized test dir NOT FOUND: ${centralizedTestDir.path} for connector name: $connectorName (original project name: ${project.name})")
-                }
-            }
         }
         configurations.maybeCreate("integrationTestImplementation").extendsFrom(configurations["testImplementation"])
         configurations.maybeCreate("integrationTestRuntimeOnly").extendsFrom(configurations["testRuntimeOnly"])
@@ -244,224 +198,75 @@ tasks.register("generateManifests") {
             )
         }
 
-        // --- Worker Helm Generation ---
-        val workerChartDir = project.file("deployment/worker")
-        val workerOutputDir = project.buildDir.resolve("deploy/worker").apply { mkdirs() }
-        val workerHelmValues = mapOf(
-            "tenant" to tenant,
-            "namespace" to namespace,
-            "functions" to functionsMap, // Using the original functionsMap
-            "connectors" to connectorEntries.associateBy { it["name"].toString() } // Using connectorEntries, adapted as a map by name
-        )
-        val workerValuesFile = project.buildDir.resolve("tmp/worker_values.yaml").apply { parentFile.mkdirs() }
-        workerValuesFile.writeText(yaml.dump(workerHelmValues))
-        println("Worker Helm values written to ${workerValuesFile.absolutePath}")
-
-        val workerManifestFile = workerOutputDir.resolve("generated-manifests.yaml")
-        val workerOutputBaos = java.io.ByteArrayOutputStream()
-        val workerErrorBaos = java.io.ByteArrayOutputStream()
-        val workerExecResult = project.exec {
-            executable = "helm"
-            args = listOf("template", "worker-release", workerChartDir.absolutePath, "--values", workerValuesFile.absolutePath)
-            standardOutput = workerOutputBaos
-            errorOutput = workerErrorBaos
-            isIgnoreExitValue = true // Handle errors manually
-        }
-
-        if (workerExecResult.exitValue != 0) {
-            logger.error("Worker Helm template command failed. Exit code: ${workerExecResult.exitValue}")
-            logger.error("Worker Helm stderr: ${workerErrorBaos.toString().trim()}")
-            workerManifestFile.writeText("# Helm generation failed\n# Error: ${workerErrorBaos.toString().trim()}")
-        } else {
-            workerManifestFile.writeText(workerOutputBaos.toString())
-            println("Worker manifests written to ${workerManifestFile.absolutePath}")
-        }
-
-        // --- Mesh Helm Generation ---
-        val meshChartDir = project.file("deployment/mesh")
-        val meshOutputDir = project.buildDir.resolve("deploy/mesh").apply { mkdirs() }
-        val meshHelmValues = mapOf(
+        val helmValues = mapOf(
             "tenant" to tenant,
             "namespace" to namespace,
             "mesh" to mapOf(
-                "enabled" to true, // Assuming 'enabled' is a required field for the mesh chart
+                "enabled" to true,
                 "functions" to adaptedFunctionsForMesh,
                 "connectors" to adaptedConnectorsForMesh
-            )
+            ),
+            "functions" to functionsMap,
+            "connectors" to connectorEntries.associateBy { it["name"].toString() }
         )
-        val meshValuesFile = project.buildDir.resolve("tmp/mesh_values.yaml").apply { parentFile.mkdirs() }
-        meshValuesFile.writeText(yaml.dump(meshHelmValues))
-        println("Mesh Helm values written to ${meshValuesFile.absolutePath}")
 
-        val meshManifestFile = meshOutputDir.resolve("generated-manifests.yaml")
-        val meshOutputBaos = java.io.ByteArrayOutputStream()
-        val meshErrorBaos = java.io.ByteArrayOutputStream()
-        val meshExecResult = project.exec {
-            executable = "helm"
-            args = listOf("template", "mesh-release", meshChartDir.absolutePath, "--values", meshValuesFile.absolutePath)
-            standardOutput = meshOutputBaos
-            errorOutput = meshErrorBaos
-            isIgnoreExitValue = true // Handle errors manually
-        }
+        val valuesFile = project.buildDir.resolve("tmp/helm_values.yaml").apply { parentFile.mkdirs() }
+        valuesFile.writeText(yaml.dump(helmValues))
+        println("Helm values written to ${valuesFile.absolutePath}")
 
-        if (meshExecResult.exitValue != 0) {
-            logger.error("Mesh Helm template command failed. Exit code: ${meshExecResult.exitValue}")
-            logger.error("Mesh Helm stderr: ${meshErrorBaos.toString().trim()}")
-            meshManifestFile.writeText("# Helm generation failed\n# Error: ${meshErrorBaos.toString().trim()}")
-        } else {
-            meshManifestFile.writeText(meshOutputBaos.toString())
-            println("Mesh manifests written to ${meshManifestFile.absolutePath}")
-        }
+        val helmChartDir = project.file("deployment/helm")
 
-        // --- Compose Bootstrap Script Generation ---
-        val bsOut = project.file("deployment/compose/bootstrap.sh")
-        val scriptContent = StringBuilder()
-
-        scriptContent.appendLine("#!/usr/bin/env bash")
-        scriptContent.appendLine("set -e") // Exit on error
-        scriptContent.appendLine("")
-        scriptContent.appendLine("ADMIN_CMD=\"pulsar-admin\"")
-        scriptContent.appendLine("TENANT=\"${tenant}\"")
-        scriptContent.appendLine("NAMESPACE=\"${namespace}\"")
-        scriptContent.appendLine("")
-        scriptContent.appendLine("echo \"Waiting for Pulsar to be ready...\"")
-        scriptContent.appendLine("until \${ADMIN_CMD} tenants get \${TENANT} > /dev/null 2>&1; do")
-        scriptContent.appendLine("  echo -n \".\"")
-        scriptContent.appendLine("  sleep 5")
-        scriptContent.appendLine("done")
-        scriptContent.appendLine("echo \"Pulsar is ready.\"")
-        scriptContent.appendLine("")
-        scriptContent.appendLine("echo \"Creating tenant '\${TENANT}' if it doesn't exist...\"")
-        scriptContent.appendLine("\${ADMIN_CMD} tenants create \${TENANT} --allowed-clusters standalone || echo \"Tenant '\${TENANT}' already exists or error creating.\"")
-        scriptContent.appendLine("")
-        scriptContent.appendLine("echo \"Creating namespace '\${TENANT}/\${NAMESPACE}' if it doesn't exist...\"")
-        scriptContent.appendLine("\${ADMIN_CMD} namespaces create \${TENANT}/\${NAMESPACE} --clusters standalone || echo \"Namespace '\${TENANT}/\${NAMESPACE}' already exists or error creating.\"")
-        scriptContent.appendLine("")
-
-        // Connector Deployment
-        scriptContent.appendLine("# --- Deploy Connectors ---")
-        connectorEntries.forEach { connectorEntry ->
-            val name = connectorEntry["name"] as String
-            val type = connectorEntry["type"] as? String ?: "unknown" // source or sink
-            val image = connectorEntry["image"] as? String
-            val topic = connectorEntry["topic"] as? String // Used as output for source, input for sink
-            @Suppress("UNCHECKED_CAST")
-            val config = connectorEntry["config"] as? Map<String, Any> ?: emptyMap()
-            val isCustom = connectorEntry["isCustom"] as? Boolean ?: false
-
-            // Convert config map to JSON string manually for simplicity
-            // A proper JSON library would be more robust for complex configs
-            val configJson = config.entries.joinToString(prefix = "{", postfix = "}", separator = ",") { entry ->
-                "\\\"${entry.key}\\\":${if (entry.value is String) "\\\"${entry.value}\\\"" else entry.value.toString()}"
+        fun gen(release: String, targetSourceTemplate: String, out: File) {
+            out.parentFile.mkdirs()
+            val outputBaos = java.io.ByteArrayOutputStream()
+            val errorBaos = java.io.ByteArrayOutputStream()
+            val execResult = project.exec {
+                executable = "helm"
+                args = listOf("template", release, helmChartDir.absolutePath, "--values", valuesFile.absolutePath)
+                standardOutput = outputBaos
+                errorOutput = errorBaos
+                isIgnoreExitValue = true
             }
-
-            val connectorCmd = when (type.lowercase()) {
-                "source" -> "sources"
-                "sink" -> "sinks"
-                else -> {
-                    logger.warn("Unknown connector type '$type' for connector '$name'. Skipping.")
-                    return@forEach
+            val fullOutput = outputBaos.toString().trim()
+            val errorOutput = errorBaos.toString().trim()
+            if (execResult.exitValue != 0) {
+                logger.error("Helm template command failed for release '$release'. Exit code: ${execResult.exitValue}")
+                logger.error("Helm stderr: $errorOutput")
+            }
+            val documents = mutableListOf<String>()
+            val sourceCommentPrefix = "# Source: "
+            fullOutput.split("---").forEach { docString ->
+                val trimmedDoc = docString.trim()
+                if (trimmedDoc.isNotEmpty() && trimmedDoc.startsWith(sourceCommentPrefix + targetSourceTemplate)) {
+                    documents.add(trimmedDoc)
                 }
             }
-
-            scriptContent.appendLine("echo \"Deploying ${type.lowercase()} connector '${name}'...\"")
-            val cmd = mutableListOf("\${ADMIN_CMD}", connectorCmd, "create")
-            cmd.add("--tenant \${TENANT}")
-            cmd.add("--namespace \${NAMESPACE}")
-            cmd.add("--name \"${name}\"")
-
-            val connectorTypeFromConfig = connectorEntry["type"] as? String // this 'type' is 'source' or 'sink'
-            // val actualConnectorType = image // this 'image' field from connector.yaml is NOT the connector type for built-ins
-
-            if (isCustom) {
-                // For custom connectors, 'image' field in connector.yaml might hold the archive name or be part of it.
-                // We'll prefer a convention <name>.nar if image is not an explicit archive path.
-                // The 'archive' field in connector.yaml would be even better if it existed.
-                // For bootstrap.sh, we assume the NAR is named <name>.nar and is in /pulsar/connectors/
-                cmd.add("--archive \"/pulsar/connectors/${name}.nar\"")
+            if (documents.isNotEmpty()) {
+                out.writeText(documents.joinToString("\n---\n") + "\n")
+                println("Wrote (filtered) $targetSourceTemplate -> ${out.path}")
             } else {
-                // For non-custom (built-in) connectors, the connector's 'name' (e.g., "kafka", "kinesis") is its type.
-                if (connectorTypeFromConfig?.lowercase() == "source") {
-                    cmd.add("--source-type \"${name}\"")
-                } else if (connectorTypeFromConfig?.lowercase() == "sink") {
-                    cmd.add("--sink-type \"${name}\"")
-                } else {
-                    logger.warn("Connector '${name}' is not custom and has an unknown type ('${connectorTypeFromConfig}'). Cannot determine --source-type or --sink-type.")
-                }
+                logger.warn("No documents found for source '$targetSourceTemplate' in Helm output for release '$release'. Output file '${out.path}' will be empty or not created.")
+                out.writeText("")
             }
-
-            if (connectorTypeFromConfig?.lowercase() == "source" && topic != null) cmd.add("--topic-name \"${topic}\"") // Source's output topic
-            if (connectorTypeFromConfig?.lowercase() == "sink" && topic != null) cmd.add("--inputs \"${topic}\"") // Sink's input topic
-
-            if (config.isNotEmpty()) {
-                cmd.add("--${type.lowercase()}-config '${configJson}'")
-            }
-            // Add other common parameters like parallelism if available in connectorEntry
-            // cmd.add("--parallelism X")
-
-            scriptContent.appendLine(cmd.joinToString(separator = " \\\n  ") + " || echo \"Failed to create connector '${name}', it might already exist.\"")
-            scriptContent.appendLine("")
         }
 
-        // Function Deployment
-        scriptContent.appendLine("# --- Deploy Functions ---")
-        functionsMap.forEach { (name, funcValue) ->
-            @Suppress("UNCHECKED_CAST")
-            val func = funcValue as Map<String, Any>
-            val className = func["className"] as? String
-            // val image = func["image"] as? String // This is a Docker image, not the JAR name for bootstrap.sh
-            val output = func["output"] as? String
-            val parallelism = func["parallelism"] as? Int
+        gen("fm", "pipeline-charts/charts/mesh/templates/function-mesh.yaml", project.buildDir.resolve("deploy/functionmesh-pipeline.yaml"))
+        gen("wk", "pipeline-charts/charts/worker/templates/registration-job.yaml", project.buildDir.resolve("deploy/worker-pipeline.yaml"))
 
-            // Handle inputs: could be a single string or a list of strings
-            val rawInputs = func["inputs"] ?: func["input"]
-            val inputsString = when (rawInputs) {
-                is List<*> -> (rawInputs as List<String>).joinToString(",")
-                is String -> rawInputs
-                else -> null
+        val bsTemplate = helmChartDir.resolve("scripts/bootstrap-direct-admin.sh.tpl")
+        val bsOut = project.buildDir.resolve("deploy/compose/bootstrap.sh")
+        if (bsTemplate.exists()) {
+            copy {
+                from(bsTemplate.parentFile)
+                include("bootstrap-direct-admin.sh.tpl")
+                into(bsOut.parentFile)
+                rename { "bootstrap.sh" }
             }
-
-            @Suppress("UNCHECKED_CAST")
-            val userConfig = func["userConfig"] as? Map<String, Any> ?: emptyMap()
-
-            // Convert userConfig map to JSON string manually
-            val userConfigJson = userConfig.entries.joinToString(prefix = "{", postfix = "}", separator = ",") { entry ->
-                "\\\"${entry.key}\\\":${if (entry.value is String) "\\\"${entry.value}\\\"" else entry.value.toString()}"
-            }
-
-            scriptContent.appendLine("echo \"Deploying function '${name}'...\"")
-            val cmd = mutableListOf("\${ADMIN_CMD}", "functions", "create")
-            cmd.add("--tenant \${TENANT}")
-            cmd.add("--namespace \${NAMESPACE}")
-            cmd.add("--name \"${name}\"")
-
-            if (className != null) cmd.add("--classname \"${className}\"")
-            // For bootstrap.sh, JAR is assumed to be <function-name>.jar in /pulsar/functions/
-            cmd.add("--jar \"/pulsar/functions/${name}.jar\"")
-
-            if (inputsString != null && inputsString.isNotBlank()) {
-                cmd.add("--inputs \"${inputsString}\"")
-            }
-            if (output != null) cmd.add("--output \"${output}\"")
-            if (parallelism != null) cmd.add("--parallelism ${parallelism}")
-            if (userConfig.isNotEmpty()) {
-                cmd.add("--user-config '${userConfigJson}'")
-            }
-            cmd.add("--auto-ack true") // Common default
-
-            scriptContent.appendLine(cmd.joinToString(separator = " \\\n  ") + " || echo \"Failed to create function '${name}', it might already exist.\"")
-            scriptContent.appendLine("")
+            bsOut.setExecutable(true)
+            println("Copied bootstrap script -> ${bsOut.absolutePath}")
+        } else {
+            logger.warn("Bootstrap template (for copy) not found at ${bsTemplate.path}, skipping copy.")
         }
-
-        scriptContent.appendLine("echo \"------------------------------------------\"")
-        scriptContent.appendLine("echo \"Pulsar pipeline bootstrap complete.\"")
-        scriptContent.appendLine("echo \"Tenant: \${TENANT}, Namespace: \${NAMESPACE}\"")
-        scriptContent.appendLine("echo \"Deployed functions and connectors.\"")
-        scriptContent.appendLine("echo \"------------------------------------------\"")
-
-        bsOut.writeText(scriptContent.toString())
-        bsOut.setExecutable(true)
-        println("Compose bootstrap script written to ${bsOut.absolutePath}")
     }
 }
 
@@ -469,14 +274,14 @@ tasks.register<Exec>("composeUp") {
     group="sandbox";
     description="Starts local dev via Docker Compose";
     dependsOn("generateManifests");
-    workingDir=project.file("deployment/compose");
+    workingDir=project.file("deployment/local-dev");
     commandLine("docker","compose","up","-d")
 }
 
 tasks.register<Exec>("composeDown") {
     group="sandbox";
     description="Stops and removes containers";
-    workingDir=project.file("deployment/compose");
+    workingDir=project.file("deployment/local-dev");
     commandLine("docker","compose","down","--volumes")
 }
 tasks.register<Exec>("loadTest") {
@@ -484,5 +289,5 @@ tasks.register<Exec>("loadTest") {
     description="Runs load test";
     dependsOn("composeUp");
     val rate=project.providers.gradleProperty("loadTest.rate").orElse("100000");
-    commandLine("bash","deployment/compose/scripts/load-test.sh","--rate",rate.get())
+    commandLine("bash","deployment/local-dev/scripts/load-test.sh","--rate",rate.get())
 }
