@@ -1,0 +1,6 @@
+apiVersion: v2
+name: compose
+version: 0.1.0
+appVersion: "0.1.0"
+description: "Sub-chart for compose services"
+type: application
