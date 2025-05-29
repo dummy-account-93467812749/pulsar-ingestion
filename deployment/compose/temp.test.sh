@@ -1,36 +1,54 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 
-# Command for admin operations executed directly (tenant, namespace, readiness check)
-ADMIN_CMD_LOCAL="pulsar-admin"
-# Command for admin operations executed via docker exec (connectors, functions)
-PULSAR_CONTAINER_NAME="compose-pulsar-1"
-ADMIN_CMD_DOCKER_EXEC="docker exec ${PULSAR_CONTAINER_NAME} bin/pulsar-admin"
+# —— CONFIG ——  
+PULSAR_CLI="docker exec compose-pulsar-1 bin/pulsar-client"  
+INPUT_TOPIC="persistent://public/default/common-events"  
+OUTPUT_PREFIX="persistent://public/default/fn-split"  
+TIMEOUT_S=5         # how many seconds to wait for the routed msg  
+# --------------
 
-TENANT="public"
-NAMESPACE="default"
+# 1) build & publish test payload
+EVENT_ID="evt-$(date +%s)"
+EVENT_TYPE="MyTestType"
+PAYLOAD="{\"eventId\":\"${EVENT_ID}\",\"eventType\":\"${EVENT_TYPE}\"}"
 
-echo "Waiting for Pulsar to be ready (using '${ADMIN_CMD_LOCAL}')..."
-until ${ADMIN_CMD_LOCAL} tenants get ${TENANT} > /dev/null 2>&1; do
-  echo -n "."
-  sleep 5
-done
-echo "Pulsar is ready."
+echo "→ Producing to $INPUT_TOPIC:"
+echo "  $PAYLOAD"
+$PULSAR_CLI produce "$INPUT_TOPIC" -m "$PAYLOAD"
 
-echo "Creating tenant '${TENANT}' if it doesn't exist (using '${ADMIN_CMD_LOCAL}')..."
-${ADMIN_CMD_LOCAL} tenants create ${TENANT} --allowed-clusters standalone || echo "Tenant '${TENANT}' already exists or error creating."
+# 2) give the function a moment
+sleep 1
 
-echo "Creating namespace '${TENANT}/${NAMESPACE}' if it doesn't exist (using '${ADMIN_CMD_LOCAL}')..."
-${ADMIN_CMD_LOCAL} namespaces create ${TENANT}/${NAMESPACE} --clusters standalone || echo "Namespace '${TENANT}/${NAMESPACE}' already exists or error creating."
+# 3) sanitize, consume with bytes schema, no hide-content
+SANITIZED=$(echo "$EVENT_TYPE" \
+  | tr '[:upper:]' '[:lower:]' \
+  | sed 's/[^a-z0-9]/-/g')
+OUT_TOPIC="${OUTPUT_PREFIX}-${SANITIZED}"
+SUB_NAME="sub-${EVENT_ID}"
 
-# --- Deploy Connectors (using '${ADMIN_CMD_DOCKER_EXEC}') ---
-echo "Deploying source connector 'kinesis'..."
-echo ${ADMIN_CMD_DOCKER_EXEC} \
-  source \
-  create \
-  --tenant ${TENANT} \
-  --namespace ${NAMESPACE} \
-  --name "kinesis" \
-  --source-type "kinesis" \
-  --destination-topic-name "persistent://public/default/kinesis-topic" \
-  --source-config-file "/pulsar/build/kinesis-config.yaml" || echo "Failed to create connector 'kinesis', it might already exist."
+echo
+echo "→ Consuming 1 msg from $OUT_TOPIC (sub=$SUB_NAME), waiting up to ${TIMEOUT_S}s …"
+
+# start consumer in background
+$PULSAR_CLI consume "$OUT_TOPIC" \
+  -s "$SUB_NAME" \
+  -n 1 \
+  -p Earliest \
+  -st bytes \
+  --print-metadata &
+
+cons_pid=$!
+
+# watcher kills it if nothing arrives
+(
+  sleep "$TIMEOUT_S"
+  if kill -0 "$cons_pid" 2>/dev/null; then
+    echo
+    echo "⏱️  No message received in ${TIMEOUT_S}s, killing consumer."
+    kill "$cons_pid" 2>/dev/null
+  fi
+) & watcher_pid=$!
+
+wait "$cons_pid" 2>/dev/null || true
+kill "$watcher_pid" 2>/dev/null || true

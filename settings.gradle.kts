@@ -33,13 +33,7 @@ rootProject.name = "pulsar-ingestion"
 include(
     "common",
     "test-kit",
-    "connectors:azure-eventhub-source",
-    "connectors:grpc-source",
-    "connectors:http-source",
-    "connectors:kafka-source",
-    "connectors:kinesis-source",
-    "connectors:pulsar-source",
-    "connectors:rabbitmq-source",
+    "connectors:grpc",
     "functions:splitter",
     "functions:translators"
 )

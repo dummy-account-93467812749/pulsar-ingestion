@@ -1,9 +1,0 @@
-# Source Pulsar service URL
-sourceServiceUrl: "pulsar://source-cluster-host:6650"
-# Source Pulsar topic to subscribe to
-sourceTopicName: "persistent://public/default/some-other-topic"
-# Subscription name
-subscriptionName: "pulsar-source-subscription"
-# Optional: Authentication parameters for the source Pulsar cluster
-# authPluginClassName: "org.apache.pulsar.client.impl.auth.AuthenticationToken"
-# authToken: "${PULSAR_SOURCE_AUTH_TOKEN}" # if using token auth, add PULSAR_SOURCE_AUTH_TOKEN to secretKeys

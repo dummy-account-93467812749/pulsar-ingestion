@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   pulsar:
-    image: apachepulsar/pulsar-all:3.1.2
+    image: apachepulsar/pulsar-all:4.0.5
     ports:
       - "6650:6650"
       - "8080:8080"
