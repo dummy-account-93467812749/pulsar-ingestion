@@ -10,9 +10,10 @@ import java.io.File // Ensure this import is present
 import java.io.ByteArrayOutputStream 
 
 plugins {
+    id("java-library") // Apply java-library to the root project
     alias(libs.plugins.kotlin.jvm) apply false
     alias(libs.plugins.shadow) apply false
-    alias(libs.plugins.jib) apply false
+    alias(libs.plugins.jib) // Jib plugin is now available for subprojects to apply
     alias(libs.plugins.dokka)
     alias(libs.plugins.spotless) apply false
     alias(libs.plugins.ben.manes.versions)
@@ -24,12 +25,23 @@ buildscript {
     dependencies { classpath("org.yaml:snakeyaml:1.33") }
 }
 
+java {
+    toolchain {
+        languageVersion.set(JavaLanguageVersion.of(21)) // Align to Java 21
+    }
+}
+
 jacoco { toolVersion = libs.versions.jacoco.get() }
 
 subprojects {
     apply(plugin = "org.jetbrains.kotlin.jvm")
     apply(plugin = "jacoco")
     apply(plugin = "com.diffplug.spotless")
+
+    // Configure Kotlin toolchain after the plugin is applied
+    plugins.withId("org.jetbrains.kotlin.jvm") {
+        project.extensions.getByType<org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension>().jvmToolchain(21)
+    }
 
     group = "com.acme.pulsar"
     version = "0.1.0-SNAPSHOT"
@@ -58,7 +70,146 @@ subprojects {
     configure<com.diffplug.gradle.spotless.SpotlessExtension> { kotlin { ktlint(libs.versions.ktlintCli.get()) } }
 
     tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
-        compilerOptions { jvmTarget.set(JvmTarget.JVM_23) }
+        compilerOptions { jvmTarget.set(JvmTarget.JVM_21) } // Explicitly set Kotlin JVM target to 21
+    }
+}
+
+/**
+ * Prepares the project for various deployment scenarios by bundling necessary artifacts.
+ *
+ * This task serves as a central point for gathering outputs from different parts of the project
+ * and organizing them into structures suitable for Docker Compose, Kubernetes (via Helm charts
+ * for mesh and worker deployments), and potentially other deployment methods.
+ *
+ * ### Main Purpose:
+ * To build the entire project and collect all necessary artifacts into deployment-ready locations.
+ * It ensures that all required components are compiled and their outputs are staged appropriately.
+ *
+ * ### Dependencies:
+ * This task depends on the successful completion of:
+ * - `build`: Ensures all subprojects are compiled, tested (if applicable), and their primary artifacts (JARs) are built.
+ * - `generateManifests`: Ensures that Helm values, Kubernetes manifests, and Docker Compose bootstrap scripts
+ *   are generated based on the current project configuration (e.g., `deployment/pipeline.yaml`).
+ *
+ * ### Artifact Handling:
+ * The task identifies and processes JAR artifacts from specific subprojects:
+ * - **Source Subprojects:** It scans all subprojects under `:functions:*` and `:connectors:*`.
+ * - **Artifact Identification:** For each of these subprojects, it looks for the main JAR file in their
+ *   `build/libs/` directory. It specifically excludes `-plain.jar`, `-sources.jar`, and `-javadoc.jar` files,
+ *   aiming for the primary executable or library JAR.
+ *   *Note on NARs:* For the purposes of this task and general deployment, the primary JAR output of these
+ *   connector and function subprojects is considered the equivalent of a NAR (NiFi Archive) or Pulsar NAR,
+ *   containing all necessary code and dependencies for that component.
+ * - **Destination Directories:** The identified JAR artifacts are copied to the following locations,
+ *   making them available for different deployment mechanisms:
+ *     - `deployment/compose/build/`: Primarily for Docker Compose deployments, where these JARs might be
+ *       mounted into Pulsar containers.
+ *     - `deployment/mesh/`: For deployments using the function mesh, where JARs are typically referenced
+ *       by the mesh controller.
+ *     - `deployment/worker/`: For traditional Pulsar function/connector worker deployments, where JARs are
+ *       placed in the worker's classpath.
+ *
+ * ### Jib Integration:
+ * - **Availability:** The Google Jib plugin (`com.google.cloud.tools.jib`) is made available at the root project level,
+ *   meaning any subproject can apply and configure it to build container images.
+ * - **Execution Scope:** `bundleForDeploy` itself does *not* execute any Jib tasks (e.g., `jib`, `jibDockerBuild`).
+ *   If container images are needed for functions or connectors, Jib tasks must be invoked explicitly
+ *   on a per-subproject basis (e.g., `./gradlew :functions:my-function:jibDockerBuild`).
+ * - **Image Pushing:** This task does not handle pushing of container images to a registry. Pushing is a
+ *   separate concern typically managed by Jib's configuration within each subproject or by CI/CD pipelines.
+ *
+ * ### Output:
+ * The task provides logging output for its actions, including:
+ * - Creation of destination directories if they don't exist.
+ * - Paths of identified JAR artifacts from each relevant subproject.
+ * - Confirmation messages for each JAR file copied to the respective destination directories.
+ * - Error messages if any copy operation fails.
+ *
+ * @see generateManifests Task that generates deployment configurations.
+ * @see <a href="https://github.com/GoogleContainerTools/jib/tree/master/jib-gradle-plugin">Jib Gradle Plugin</a>
+ */
+tasks.register("bundleForDeploy") {
+    group = "deployment"
+    description = "Bundles artifacts for deployment."
+    dependsOn("build", "generateManifests")
+
+    doLast {
+        // Jib integration: The Jib plugin is now available. 
+        // To build an image for a subproject, apply the Jib plugin in its own build.gradle.kts and configure it.
+        // Image pushing is currently not enabled by default in this task.
+        // This task currently focuses on copying JARs. Jib tasks (jib, jibDockerBuild) should be run per-project.
+
+        val composeBuildDir = project.file("deployment/compose/build")
+        val meshDir = project.file("deployment/mesh")
+        val workerDir = project.file("deployment/worker")
+
+        listOf(composeBuildDir, meshDir, workerDir).forEach { dir ->
+            if (!dir.exists()) {
+                dir.mkdirs()
+                println("Created directory: ${dir.absolutePath}")
+            }
+        }
+
+        val collectedJarFiles = mutableListOf<File>()
+        subprojects.forEach { subproject ->
+            if (subproject.path.startsWith(":functions") || subproject.path.startsWith(":connectors")) {
+                val libsDir = subproject.buildDir.resolve("libs")
+                if (libsDir.exists() && libsDir.isDirectory) {
+                    val jarFiles = libsDir.listFiles { file ->
+                        file.isFile &&
+                        file.name.endsWith(".jar") &&
+                        !file.name.endsWith("-plain.jar") &&
+                        !file.name.endsWith("-sources.jar") &&
+                        !file.name.endsWith("-javadoc.jar")
+                    }?.toList() ?: emptyList()
+
+                    if (jarFiles.isNotEmpty()) {
+                        val artifactJar = jarFiles.first() // Pick the first one
+                        collectedJarFiles.add(artifactJar)
+                        println("Found artifact for ${subproject.path}: ${artifactJar.absolutePath}")
+                    } else {
+                        println("No suitable JAR found for subproject ${subproject.path} in ${libsDir.absolutePath}")
+                    }
+                } else {
+                    println("Libs directory not found for subproject ${subproject.path}: ${libsDir.absolutePath}")
+                }
+            }
+        }
+
+        if (collectedJarFiles.isNotEmpty()) {
+            println("\nProcessing JARs for deployment packaging:")
+            collectedJarFiles.forEach { sourceJarFile ->
+                // Copy to deployment/compose/build/
+                val targetComposeJarFile = composeBuildDir.resolve(sourceJarFile.name)
+                try {
+                    sourceJarFile.copyTo(targetComposeJarFile, overwrite = true)
+                    println("Copied ${sourceJarFile.name} to ${composeBuildDir.absolutePath}")
+                } catch (e: Exception) {
+                    println("ERROR: Could not copy ${sourceJarFile.name} to ${composeBuildDir.absolutePath}: ${e.message}")
+                }
+
+                // Copy to deployment/mesh/
+                val targetMeshJarFile = meshDir.resolve(sourceJarFile.name)
+                try {
+                    sourceJarFile.copyTo(targetMeshJarFile, overwrite = true)
+                    println("Copied ${sourceJarFile.name} to ${meshDir.absolutePath}")
+                } catch (e: Exception) {
+                    println("ERROR: Could not copy ${sourceJarFile.name} to ${meshDir.absolutePath}: ${e.message}")
+                }
+
+                // Copy to deployment/worker/
+                val targetWorkerJarFile = workerDir.resolve(sourceJarFile.name)
+                try {
+                    sourceJarFile.copyTo(targetWorkerJarFile, overwrite = true)
+                    println("Copied ${sourceJarFile.name} to ${workerDir.absolutePath}")
+                } catch (e: Exception) {
+                    println("ERROR: Could not copy ${sourceJarFile.name} to ${workerDir.absolutePath}: ${e.message}")
+                }
+            }
+            println("\nAll identified JARs processed for deployment packaging.")
+        } else {
+            println("\nNo JARs were found to package for deployment.")
+        }
     }
 }
 
@@ -473,3 +624,39 @@ tasks.register<Exec>("loadTest") {
     val rate=project.providers.gradleProperty("loadTest.rate").orElse("100000");
     commandLine("bash","deployment/compose/scripts/load-test.sh","--rate",rate.get())
 }
+
+// Example of how a subproject (e.g., a function or connector) can configure Jib to build a container image:
+/*
+In the subproject's build.gradle.kts:
+
+plugins {
+    alias(libs.plugins.jib)
+}
+
+jib {
+    from {
+        image = "eclipse-temurin:17-jre-jammy" // Or any other base image
+    }
+    to {
+        // Example: your-docker-hub-username/my-function-name:0.1.0-SNAPSHOT
+        // It's good practice to use project.name and project.version for consistent tagging.
+        image = "your-repo/\${project.name}:\${project.version}"
+        // tags = setOf("latest", project.version.toString()) // Optional: additional tags
+    }
+    container {
+        // You might need to configure entrypoint, ports, jvmFlags, etc., depending on the application
+        // mainClass = "com.example.Application" // If not automatically detected
+        // jvmFlags = listOf("-Xms512m", "-Xmx1024m")
+        // ports = listOf("8080")
+    }
+}
+
+// To build the image and push to the configured remote repository:
+// ./gradlew :subproject-path:jib
+//
+// To build the image to your local Docker daemon:
+// ./gradlew :subproject-path:jibDockerBuild
+//
+// Note: Ensure you have credentials configured for your Docker registry if pushing.
+// For local Docker daemon, ensure Docker is running.
+*/
