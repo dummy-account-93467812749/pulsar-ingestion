@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-# Command for admin operations executed directly (tenant, namespace, readiness check)
 ADMIN_CMD_LOCAL="pulsar-admin"
-# Command for admin operations executed via docker exec (connectors, functions)
 PULSAR_CONTAINER_NAME="compose-pulsar-1"
 ADMIN_CMD_DOCKER_EXEC="docker exec ${PULSAR_CONTAINER_NAME} bin/pulsar-admin"
 
@@ -15,7 +13,7 @@ until ${ADMIN_CMD_LOCAL} tenants get ${TENANT} > /dev/null 2>&1; do
   echo -n "."
   sleep 5
 done
-echo "Pulsar is ready."
+echo " Pulsar is ready."
 
 echo "Creating tenant '${TENANT}' if it doesn't exist (using '${ADMIN_CMD_LOCAL}')..."
 ${ADMIN_CMD_LOCAL} tenants create ${TENANT} --allowed-clusters standalone || echo "Tenant '${TENANT}' already exists or error creating."
@@ -160,7 +158,7 @@ ${ADMIN_CMD_DOCKER_EXEC} \
   --source-type "grpc-source" \
   --destination-topic-name "default-topic" || echo "Failed to create connector 'grpc-source', it might already exist."
 
-echo "NOTE: Ensure connector config files from 'deployment/compose/build/' are mounted to '/pulsar/build/' in your Pulsar container (${PULSAR_CONTAINER_NAME})."
+echo "NOTE: Ensure connector config files from 'build/' (relative to compose file) are mounted to '/pulsar/build/' in ${PULSAR_CONTAINER_NAME}."
 echo "And custom connector NARs are mounted to '/pulsar/connectors/' in ${PULSAR_CONTAINER_NAME}."
 
 # --- Deploy Functions (using '${ADMIN_CMD_DOCKER_EXEC}') ---
