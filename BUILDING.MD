@@ -30,8 +30,11 @@ You can run Gradle tasks for specific subprojects. For example:
 - To run tests for the `user-profile-translator` function: `./gradlew :functions:translators:user-profile-translator:test`
 
 ## Artifact Generation
-- **Lean JARs:** Connector submodules (e.g., the gRPC connector) and some older function modules are configured to produce lean JAR files. These JARs contain only the module's compiled code and resources, without bundling common dependencies like Pulsar APIs or test frameworks.
-- **NAR files:** All translator functions (e.g., `shipment-status-translator`, `user-profile-translator`, etc., under `functions/translators/`) are now configured to produce **lean NAR (Pulsar Archive) files**. These NARs (e.g., `shipment-status-translator.nar`, with no version in the filename) bundle the function's compiled code and only its essential runtime dependencies (like Jackson). They specifically exclude Pulsar APIs, logging frameworks, and test dependencies, which are provided by the Pulsar runtime. This makes them the standard packaging format for deploying these functions. Other modules like `functions:splitter` may still produce NARs, potentially with different dependency bundling characteristics.
+- **Lean JARs:** Some older function modules or certain utility modules may still be configured to produce lean JAR files. These JARs contain only the module's compiled code and resources, without bundling common dependencies like Pulsar APIs or test frameworks.
+- **NAR files:** 
+  - All translator functions (e.g., `shipment-status-translator`, `user-profile-translator`, etc., under `functions/translators/`) are now configured to produce **lean NAR (Pulsar Archive) files**. These NARs (e.g., `shipment-status-translator.nar`, with no version in the filename) bundle the function's compiled code and only its essential runtime dependencies (like Jackson). They specifically exclude Pulsar APIs, logging frameworks, and test dependencies, which are provided by the Pulsar runtime. This makes them the standard packaging format for deploying these functions.
+  - Similarly, custom connectors built from source within this repository (e.g., the `connectors/grpc` project) are now also configured to produce version-less, lean NAR files (e.g., `grpc.nar`). These also exclude Pulsar-provided libraries and include only their essential runtime dependencies.
+  - Other modules like `functions:splitter` may still produce NARs, potentially with different dependency bundling characteristics.
 - **Container Images (Jib):** Subprojects intended for containerization (like functions and connectors) are typically configured with the Google Jib plugin. You can build container images directly using tasks like:
   - `./gradlew :<subproject-path>:jibDockerBuild` (builds to local Docker daemon)
   - `./gradlew :<subproject-path>:jib` (builds and pushes to a configured remote registry)
@@ -46,16 +49,22 @@ To run this task:
 ```
 
 ### What it Does:
--   **Collects Lean Artifacts:** This task scans through relevant `functions` and `connectors` submodules. For `functions` subprojects (specifically translators like those under `functions/translators/`), it now exclusively looks for and collects the **lean NAR files** (e.g., `user-profile-translator.nar`). If a NAR is not found for a translator function, a warning is logged, and no JAR fallback occurs for that function. For `connectors` or other non-translator function modules (like `functions:splitter`), it may collect lean JARs or other NAR types as configured in those subprojects.
+-   **Collects Lean Artifacts:** This task scans through relevant `functions` and `connectors` submodules.
+    -   For `functions` subprojects (specifically translators), it exclusively looks for and collects their **lean NAR files** (e.g., `user-profile-translator.nar`). If a NAR is not found for a translator, a warning is logged, and no JAR fallback occurs.
+    -   For custom `connectors` built from source (e.g., `connectors/grpc`), it now also looks for and collects their **lean NAR files** (e.g., `grpc.nar`).
+    -   For other modules (like `functions:splitter` or pre-built connectors defined only by YAML), it may collect lean JARs or other NAR types as configured/available.
 -   Test utility modules (e.g., those ending in `-integration`) are excluded.
 
 ### Output Directories:
-The collected artifacts (including NARs for translators and JARs/NARs for other components) are copied into the following directories:
+The collected artifacts (including NARs for translators and connectors, and JARs/NARs for other components) are copied into the following directories:
 -   `deployment/compose/build/`: Primarily for Docker Compose deployments.
 -   `deployment/mesh/`: For deployments using Pulsar Function Mesh.
 -   `deployment/worker/`: For traditional Pulsar Function/Connector worker deployments.
 
 This task ensures that you have a consolidated set of deployable units ready for your chosen deployment method. It does *not* build container images directly; container image building (e.g., using Jib) is handled within each individual module's build process (e.g., `./gradlew :functions:translators:user-profile-translator:jibBuildDocker`).
+
+**Note on `bundleForDeploy` and Task Execution:**
+The `bundleForDeploy` task is configured to depend on the `build` task (i.e., `dependsOn("build")`). This ensures that Gradle attempts to build all necessary subprojects before bundling artifacts. However, due to Gradle's up-to-date checks, if no source files or build script inputs have changed since the last build, Gradle may mark many tasks as `UP-TO-DATE` and skip their execution for efficiency. If you need to ensure a complete, fresh rebuild of all artifacts before bundling, run `./gradlew clean build` followed by `./gradlew bundleForDeploy`, or combine them like `./gradlew clean bundleForDeploy` (as `bundleForDeploy` triggers `build`).
 
 **Note on Docker Compose and Function NARs:** When using Docker Compose with the generated `bootstrap.sh` script (found in `deployment/compose/`), translator function NARs are deployed using the `--archive` flag. The `bootstrap.sh` script expects these NARs to be available inside the Pulsar container under the `/pulsar/build/` directory. Therefore, you'll need to ensure your `docker-compose.yml` correctly mounts the NAR files from your host's `deployment/compose/build/` directory to `/pulsar/build/` in the Pulsar container (e.g., host `deployment/compose/build/shipment-status-translator.nar` to container `/pulsar/build/shipment-status-translator.nar`).
 
