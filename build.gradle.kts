@@ -152,7 +152,12 @@ tasks.register("bundleForDeploy") {
 
         val collectedArtifactFiles = mutableListOf<File>()
         subprojects.forEach { subproject ->
-            if (subproject.path.startsWith(":functions") || subproject.path.startsWith(":connectors")) {
+            // Only process subprojects that are under :functions or :connectors AND have a build script,
+            // AND whose names do not end with "-integration"
+            if ((subproject.path.startsWith(":functions") || subproject.path.startsWith(":connectors")) &&
+                subproject.file("build.gradle.kts").exists() &&
+                !subproject.name.endsWith("-integration")) {
+                
                 val libsDir = subproject.buildDir.resolve("libs")
                 var foundArtifact: File? = null
 

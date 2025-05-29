@@ -35,5 +35,11 @@ include(
     "test-kit",
     "connectors:grpc",
     "functions:splitter",
-    "functions:translators"
+    "functions:translators",
+    "functions:translators:inventory-update-translator",
+    "functions:translators:order-record-translator",
+    "functions:translators:payment-notice-translator",
+    "functions:translators:shipment-status-translator",
+    "functions:translators:user-profile-translator",
+    "functions:translators:translators-integration"
 )
