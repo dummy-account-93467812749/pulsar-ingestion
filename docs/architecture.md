@@ -4,7 +4,7 @@ This document outlines the architecture of the Pulsar Ingestion project, focusin
 
 ## Core Principles
 
-*   **Modularity:** Connectors and functions are designed as independent modules.
+*   **Modularity:** Connectors and functions are designed as independent modules. For example, translator functions under `functions/translators/` are implemented as individual submodules, each building a separate artifact.
 *   **Extensibility:** The framework allows for easy addition of new source connectors and processing functions.
 *   **Scalability:** Leveraging Pulsar's native scalability for message ingestion and processing.
 *   **Testability:** Emphasis on unit and integration testing for each component. Integration tests for all connectors are centralized in the `connectors/test/` directory.
@@ -62,6 +62,16 @@ This section details the source connectors developed for ingesting data from dif
 *   **Status:** Config-only connector, uses native Pulsar IO. Configuration in YAML files.
 *   **Configuration:** Follows `connectors/rabbitmq/connector.yaml` and `connectors/rabbitmq/config.sample.yml`.
 
+## Processing Functions
+
+Pulsar Functions are used for tasks like message transformation and enrichment.
+
+### Translator Functions
+Located under `functions/translators/`, these functions are responsible for converting messages from various source formats into a common schema.
+-   **Structure:** The `functions/translators/` directory acts as a parent for multiple individual translator submodules (e.g., `user-profile-translator`, `order-record-translator`).
+-   **Artifacts:** Each translator submodule is independently built and produces its own lean JAR file. These JARs are then collected by the `bundleForDeploy` task for deployment.
+-   **Testing:** Unit tests are specific to each translator submodule. Shared integration tests for translators are located in the `functions:translators:translators-integration` module.
+
 ---
 
-*Further sections on Processing Functions, Deployment, etc., would follow in a complete architecture document.*
+*Further sections on Deployment, etc., would follow in a complete architecture document.*
