@@ -150,25 +150,45 @@ tasks.register("bundleForDeploy") {
             }
         }
 
-        val collectedJarFiles = mutableListOf<File>()
+        val collectedArtifactFiles = mutableListOf<File>()
         subprojects.forEach { subproject ->
             if (subproject.path.startsWith(":functions") || subproject.path.startsWith(":connectors")) {
                 val libsDir = subproject.buildDir.resolve("libs")
-                if (libsDir.exists() && libsDir.isDirectory) {
-                    val jarFiles = libsDir.listFiles { file ->
-                        file.isFile &&
-                        file.name.endsWith(".jar") &&
-                        !file.name.endsWith("-plain.jar") &&
-                        !file.name.endsWith("-sources.jar") &&
-                        !file.name.endsWith("-javadoc.jar")
-                    }?.toList() ?: emptyList()
+                var foundArtifact: File? = null
 
-                    if (jarFiles.isNotEmpty()) {
-                        val artifactJar = jarFiles.first() // Pick the first one
-                        collectedJarFiles.add(artifactJar)
-                        println("Found artifact for ${subproject.path}: ${artifactJar.absolutePath}")
+                if (libsDir.exists() && libsDir.isDirectory) {
+                    // Prioritize .nar for :functions subprojects
+                    if (subproject.path.startsWith(":functions")) {
+                        val narFiles = libsDir.listFiles { file ->
+                            file.isFile && file.name.endsWith(".nar")
+                        }?.toList() ?: emptyList()
+
+                        if (narFiles.isNotEmpty()) {
+                            foundArtifact = narFiles.first()
+                            println("Found NAR artifact for ${subproject.path}: ${foundArtifact.absolutePath}")
+                        }
+                    }
+
+                    // Fallback to .jar if .nar not found or not a :functions project
+                    if (foundArtifact == null) {
+                        val jarFiles = libsDir.listFiles { file ->
+                            file.isFile &&
+                            file.name.endsWith(".jar") &&
+                            !file.name.endsWith("-plain.jar") &&
+                            !file.name.endsWith("-sources.jar") &&
+                            !file.name.endsWith("-javadoc.jar")
+                        }?.toList() ?: emptyList()
+
+                        if (jarFiles.isNotEmpty()) {
+                            foundArtifact = jarFiles.first()
+                            println("Found JAR artifact for ${subproject.path}: ${foundArtifact.absolutePath}")
+                        }
+                    }
+
+                    if (foundArtifact != null) {
+                        collectedArtifactFiles.add(foundArtifact)
                     } else {
-                        println("No suitable JAR found for subproject ${subproject.path} in ${libsDir.absolutePath}")
+                        println("No suitable artifact (.nar or .jar) found for subproject ${subproject.path} in ${libsDir.absolutePath}")
                     }
                 } else {
                     println("Libs directory not found for subproject ${subproject.path}: ${libsDir.absolutePath}")
@@ -176,39 +196,39 @@ tasks.register("bundleForDeploy") {
             }
         }
 
-        if (collectedJarFiles.isNotEmpty()) {
-            println("\nProcessing JARs for deployment packaging:")
-            collectedJarFiles.forEach { sourceJarFile ->
+        if (collectedArtifactFiles.isNotEmpty()) {
+            println("\nProcessing artifacts for deployment packaging:")
+            collectedArtifactFiles.forEach { sourceArtifactFile ->
                 // Copy to deployment/compose/build/
-                val targetComposeJarFile = composeBuildDir.resolve(sourceJarFile.name)
+                val targetComposeArtifactFile = composeBuildDir.resolve(sourceArtifactFile.name)
                 try {
-                    sourceJarFile.copyTo(targetComposeJarFile, overwrite = true)
-                    println("Copied ${sourceJarFile.name} to ${composeBuildDir.absolutePath}")
+                    sourceArtifactFile.copyTo(targetComposeArtifactFile, overwrite = true)
+                    println("Copied ${sourceArtifactFile.name} to ${composeBuildDir.absolutePath}")
                 } catch (e: Exception) {
-                    println("ERROR: Could not copy ${sourceJarFile.name} to ${composeBuildDir.absolutePath}: ${e.message}")
+                    println("ERROR: Could not copy ${sourceArtifactFile.name} to ${composeBuildDir.absolutePath}: ${e.message}")
                 }
 
                 // Copy to deployment/mesh/
-                val targetMeshJarFile = meshDir.resolve(sourceJarFile.name)
+                val targetMeshArtifactFile = meshDir.resolve(sourceArtifactFile.name)
                 try {
-                    sourceJarFile.copyTo(targetMeshJarFile, overwrite = true)
-                    println("Copied ${sourceJarFile.name} to ${meshDir.absolutePath}")
+                    sourceArtifactFile.copyTo(targetMeshArtifactFile, overwrite = true)
+                    println("Copied ${sourceArtifactFile.name} to ${meshDir.absolutePath}")
                 } catch (e: Exception) {
-                    println("ERROR: Could not copy ${sourceJarFile.name} to ${meshDir.absolutePath}: ${e.message}")
+                    println("ERROR: Could not copy ${sourceArtifactFile.name} to ${meshDir.absolutePath}: ${e.message}")
                 }
 
                 // Copy to deployment/worker/
-                val targetWorkerJarFile = workerDir.resolve(sourceJarFile.name)
+                val targetWorkerArtifactFile = workerDir.resolve(sourceArtifactFile.name)
                 try {
-                    sourceJarFile.copyTo(targetWorkerJarFile, overwrite = true)
-                    println("Copied ${sourceJarFile.name} to ${workerDir.absolutePath}")
+                    sourceArtifactFile.copyTo(targetWorkerArtifactFile, overwrite = true)
+                    println("Copied ${sourceArtifactFile.name} to ${workerDir.absolutePath}")
                 } catch (e: Exception) {
-                    println("ERROR: Could not copy ${sourceJarFile.name} to ${workerDir.absolutePath}: ${e.message}")
+                    println("ERROR: Could not copy ${sourceArtifactFile.name} to ${workerDir.absolutePath}: ${e.message}")
                 }
             }
-            println("\nAll identified JARs processed for deployment packaging.")
+            println("\nAll identified artifacts processed for deployment packaging.")
         } else {
-            println("\nNo JARs were found to package for deployment.")
+            println("\nNo artifacts were found to package for deployment.")
         }
     }
 }

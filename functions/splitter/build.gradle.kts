@@ -53,11 +53,14 @@ dependencies {
 tasks.shadowJar {
     archiveClassifier.set("")
     manifest { attributes["Main-Class"] = "com.example.pulsar.functions.routing.EventTypeSplitter" }
+    isZip64 = true
 }
 
 tasks.register<Zip>("makeNar") {
     dependsOn(tasks.shadowJar)
     archiveFileName.set("${project.name}-${project.version}.nar")
+    destinationDirectory.set(project.layout.buildDirectory.dir("libs"))
+    isZip64 = true
     from(zipTree(tasks.shadowJar.get().archiveFile)) {
         // Optional: exclude unnecessary files from the NAR if shadowJar includes too much
         // exclude("META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA")
@@ -68,4 +71,8 @@ jib {
     from.image = "eclipse-temurin:23-jre"
     to.image   = "ghcr.io/acme/${project.name}:${project.version}"
     container.entrypoint = listOf()
+}
+
+tasks.named("assemble") {
+    dependsOn(tasks.named("makeNar"))
 }

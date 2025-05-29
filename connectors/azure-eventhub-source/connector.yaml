@@ -1,0 +1,4 @@
+type: source # or sink
+topic: default-topic
+archive: azure-eventhub-source.nar
+connectorType: azure-eventhub-source
