@@ -28,8 +28,13 @@ buildscript {
 java {
     toolchain {
         languageVersion.set(JavaLanguageVersion.of(17)) // Align to Java 17
+        // Add a toolchain resolver
+        vendor.set(JvmVendorSpec.AZUL) // Example: Zulu from Azul. This relies on a resolver being configured, e.g. via settings.
     }
 }
+
+// Removed the problematic plugins.withType block for JavaToolchainResolverRegistry
+
 
 jacoco { toolVersion = libs.versions.jacoco.get() }
 
@@ -171,11 +176,13 @@ tasks.register("bundleForDeploy") {
                         if (narFiles.isNotEmpty()) {
                             foundArtifact = narFiles.first()
                             println("Found NAR artifact for ${subproject.path}: ${foundArtifact.absolutePath}")
+                        } else {
+                            // NAR not found for a function project, log a warning and do not fall back to JAR
+                            project.logger.warn("WARNING: No NAR artifact found for function subproject ${subproject.path} in ${libsDir.absolutePath}. Skipping artifact collection for this function.")
+                            // foundArtifact remains null, so it won't be added to collectedArtifactFiles
                         }
-                    }
-
-                    // Fallback to .jar if .nar not found or not a :functions project
-                    if (foundArtifact == null) {
+                    } else { // For non-function projects (e.g., connectors)
+                        // Fallback to .jar (existing logic for connectors)
                         val jarFiles = libsDir.listFiles { file ->
                             file.isFile &&
                             file.name.endsWith(".jar") &&
@@ -562,7 +569,8 @@ fun generateBootstrapScript(
             val className = func["className"] as? String
             val output = func["output"] as? String // Note: Mesh adaptation uses 'outputs', bootstrap uses 'output'
             val parallelism = func["parallelism"] as? Int
-            val jarFileName = func["jar"] as? String ?: "${name}.jar"
+            // Expect NAR file for functions
+            val narFileName = func["nar"] as? String ?: "${name}.nar"
 
             val inputsString = when (val rawInputs = func["inputs"] ?: func["input"]) {
                 is List<*> -> rawInputs.mapNotNull { it?.toString() }.joinToString(",")
@@ -586,23 +594,29 @@ fun generateBootstrapScript(
             } else null
 
             appendLine("echo \"Deploying function '${name}'...\"")
-            val cmd = mutableListOf("\${ADMIN_CMD_DOCKER_EXEC}", "functions", "create")
-            cmd.add("--tenant \${TENANT}")
-            cmd.add("--namespace \${NAMESPACE}")
-            cmd.add("--name \"${name}\"")
-            className?.let { cmd.add("--classname \"$it\"") }
-            cmd.add("--jar \"/pulsar/functions/${jarFileName}\"")
-            inputsString?.takeIf { it.isNotBlank() }?.let { cmd.add("--inputs \"$it\"") }
-            output?.takeIf { it.isNotBlank() }?.let { cmd.add("--output \"$it\"") }
-            parallelism?.let { cmd.add("--parallelism $it") }
-            userConfigJson?.let { cmd.add("--user-config '$it'") }
-            cmd.add("--auto-ack true")
+            // Start command construction for functions create
+            val commandStart = "\${ADMIN_CMD_DOCKER_EXEC} functions create"
+            val cmdOptions = mutableListOf<String>()
+            cmdOptions.add("--tenant \${TENANT}")
+            cmdOptions.add("--namespace \${NAMESPACE}")
+            cmdOptions.add("--name \"${name}\"")
+            className?.let { cmdOptions.add("--classname \"$it\"") }
+            // Use --archive and the new path for NAR files
+            cmdOptions.add("--archive \"/pulsar/build/${narFileName}\"")
+            inputsString?.takeIf { it.isNotBlank() }?.let { cmdOptions.add("--inputs \"$it\"") }
+            output?.takeIf { it.isNotBlank() }?.let { cmdOptions.add("--output \"$it\"") }
+            parallelism?.let { cmdOptions.add("--parallelism $it") }
+            userConfigJson?.let { cmdOptions.add("--user-config '$it'") }
+            cmdOptions.add("--auto-ack true")
 
-            appendLine(cmd.joinToString(separator = " \\\n  ") + " || echo \"Failed to create function '${name}', it might already exist.\"")
+            // Construct the full command string with proper newlines
+            appendLine(commandStart + " \\")
+            appendLine(cmdOptions.joinToString(separator = " \\\n  ") + " || echo \"Failed to create function '${name}', it might already exist.\"")
             appendLine()
         }
         if (rawFunctions.isNotEmpty()) {
-            appendLine("echo \"NOTE: Ensure function JARs are mounted to '/pulsar/functions/' in your Pulsar container (\${PULSAR_CONTAINER_NAME}).\"")
+            // Update comment to refer to NARs and the /pulsar/build path
+            appendLine("echo \"NOTE: Ensure function NARs are mounted to '/pulsar/build/' in your Pulsar container (\${PULSAR_CONTAINER_NAME}).\"")
             appendLine()
         }
 
@@ -621,7 +635,8 @@ fun generateBootstrapScript(
     project.logger.warn("IMPORTANT: Update your docker-compose.yml to mount:")
     project.logger.warn("  - '${connectorConfigsOutDir.name}' (from deployment/compose/build) to '${inContainerConnectorConfigsPath}' (for connector configs)")
     project.logger.warn("  - Your connector NAR files to '/pulsar/connectors/' (for custom connectors)")
-    project.logger.warn("  - Your function JAR files to '/pulsar/functions/' (for functions)")
+    // Update warning message to refer to NARs and the /pulsar/build path
+    project.logger.warn("  - Your function NAR files to '/pulsar/build/' (for functions)")
 }
 
 
