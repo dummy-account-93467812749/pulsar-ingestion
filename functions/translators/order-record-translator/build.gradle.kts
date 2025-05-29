@@ -29,6 +29,7 @@ tasks.named<com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar>("shadowJ
     archiveBaseName.set(project.name)
     archiveClassifier.set("")
     archiveExtension.set("nar")
+    archiveVersion.set("") // Remove the version from the NAR filename
 
     dependencies {
         // Exclude Pulsar APIs and other runtime-provided dependencies

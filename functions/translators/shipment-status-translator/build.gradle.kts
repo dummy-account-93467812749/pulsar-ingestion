@@ -29,6 +29,7 @@ tasks.shadowJar {
     archiveBaseName.set("shipment-status-translator")
     archiveClassifier.set("") // No classifier
     archiveExtension.set("nar")
+    archiveVersion.set("") // Remove the version from the NAR filename
 
     dependencies {
         // Exclude Pulsar APIs and other runtime-provided dependencies
