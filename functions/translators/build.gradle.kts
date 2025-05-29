@@ -53,9 +53,18 @@ dependencies {
   testImplementation(libs.pulsar.client.admin.original) // Use catalog
 }
 
+// Add shadowJar configuration for zip64 support
+tasks.shadowJar {
+    isZip64 = true
+    // If a classifier was intended, like "-all", it would be set here:
+    // archiveClassifier.set("all") 
+}
+
 tasks.register<Zip>("makeNar") {
     dependsOn(tasks.shadowJar)
     archiveFileName.set("${project.name}-${project.version}.nar")
+    destinationDirectory.set(project.layout.buildDirectory.dir("libs"))
+    isZip64 = true
     from(zipTree(tasks.shadowJar.get().archiveFile)) {
         // Optional: exclude unnecessary files from the NAR if shadowJar includes too much
         // exclude("META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA")
@@ -68,4 +77,8 @@ jib {
     to.image   = "ghcr.io/acme/${project.name}:${project.version}" // This seems appropriate for 'translators'
     container.entrypoint = listOf()                    // Function Mesh handles cmd
     // Consider setting container.appRoot or other jib configurations
+}
+
+tasks.named("assemble") {
+    dependsOn(tasks.named("makeNar"))
 }

@@ -1,0 +1,4 @@
+type: source # or sink
+topic: default-topic
+archive: kafka-source.nar
+connectorType: kafka-source
