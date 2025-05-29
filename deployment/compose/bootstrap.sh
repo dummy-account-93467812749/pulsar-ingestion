@@ -7,8 +7,8 @@ ADMIN_CMD_LOCAL="pulsar-admin"
 PULSAR_CONTAINER_NAME="compose-pulsar-1"
 ADMIN_CMD_DOCKER_EXEC="docker exec ${PULSAR_CONTAINER_NAME} bin/pulsar-admin"
 
-TENANT="acme"
-NAMESPACE="ingest"
+TENANT="public"
+NAMESPACE="default"
 
 echo "Waiting for Pulsar to be ready (using '${ADMIN_CMD_LOCAL}')..."
 until ${ADMIN_CMD_LOCAL} tenants get ${TENANT} > /dev/null 2>&1; do
@@ -24,16 +24,16 @@ echo "Creating namespace '${TENANT}/${NAMESPACE}' if it doesn't exist (using '${
 ${ADMIN_CMD_LOCAL} namespaces create ${TENANT}/${NAMESPACE} --clusters standalone || echo "Namespace '${TENANT}/${NAMESPACE}' already exists or error creating."
 
 # --- Deploy Connectors (using '${ADMIN_CMD_DOCKER_EXEC}') ---
-echo "Deploying source connector 'http'..."
+echo "Deploying source connector 'kinesis'..."
 ${ADMIN_CMD_DOCKER_EXEC} \
   source \
   create \
   --tenant ${TENANT} \
   --namespace ${NAMESPACE} \
-  --name "http" \
-  --source-type "netty" \
-  --destination-topic-name "persistent://public/default/http-netty-input-topic" \
-  --source-config-file "/pulsar/build/http-config.yaml" || echo "Failed to create connector 'http', it might already exist."
+  --name "kinesis" \
+  --source-type "kinesis" \
+  --destination-topic-name "persistent://public/default/kinesis-topic" \
+  --source-config-file "/pulsar/build/kinesis-config.yaml" || echo "Failed to create connector 'kinesis', it might already exist."
 
 echo "Deploying source connector 'grpc'..."
 ${ADMIN_CMD_DOCKER_EXEC} \
@@ -46,16 +46,27 @@ ${ADMIN_CMD_DOCKER_EXEC} \
   --destination-topic-name "persistent://public/default/grpc-topic" \
   --source-config-file "/pulsar/build/grpc-config.yaml" || echo "Failed to create connector 'grpc', it might already exist."
 
-echo "Deploying source connector 'azure-eventhub'..."
+echo "Deploying source connector 'rabbitmq'..."
 ${ADMIN_CMD_DOCKER_EXEC} \
   source \
   create \
   --tenant ${TENANT} \
   --namespace ${NAMESPACE} \
-  --name "azure-eventhub" \
-  --source-type "azure-eventhub" \
-  --destination-topic-name "persistent://public/default/eventhub-amqp-input-topic" \
-  --source-config-file "/pulsar/build/azure-eventhub-config.yaml" || echo "Failed to create connector 'azure-eventhub', it might already exist."
+  --name "rabbitmq" \
+  --source-type "rabbitmq" \
+  --destination-topic-name "persistent://public/default/rabbitmq-topic" \
+  --source-config-file "/pulsar/build/rabbitmq-config.yaml" || echo "Failed to create connector 'rabbitmq', it might already exist."
+
+echo "Deploying source connector 'http'..."
+${ADMIN_CMD_DOCKER_EXEC} \
+  source \
+  create \
+  --tenant ${TENANT} \
+  --namespace ${NAMESPACE} \
+  --name "http" \
+  --source-type "netty" \
+  --destination-topic-name "persistent://public/default/http-netty-input-topic" \
+  --source-config-file "/pulsar/build/http-config.yaml" || echo "Failed to create connector 'http', it might already exist."
 
 echo "Deploying source connector 'kafka'..."
 ${ADMIN_CMD_DOCKER_EXEC} \
@@ -68,38 +79,16 @@ ${ADMIN_CMD_DOCKER_EXEC} \
   --destination-topic-name "persistent://public/default/kafka-topic" \
   --source-config-file "/pulsar/build/kafka-config.yaml" || echo "Failed to create connector 'kafka', it might already exist."
 
-echo "Deploying source connector 'rabbitmq'..."
+echo "Deploying source connector 'azure-eventhub'..."
 ${ADMIN_CMD_DOCKER_EXEC} \
   source \
   create \
   --tenant ${TENANT} \
   --namespace ${NAMESPACE} \
-  --name "rabbitmq" \
-  --source-type "rabbitmq" \
-  --destination-topic-name "persistent://public/default/rabbitmq-topic" \
-  --source-config-file "/pulsar/build/rabbitmq-config.yaml" || echo "Failed to create connector 'rabbitmq', it might already exist."
-
-echo "Deploying source connector 'kinesis'..."
-${ADMIN_CMD_DOCKER_EXEC} \
-  source \
-  create \
-  --tenant ${TENANT} \
-  --namespace ${NAMESPACE} \
-  --name "kinesis" \
-  --source-type "kinesis" \
-  --destination-topic-name "persistent://public/default/kinesis-topic" \
-  --source-config-file "/pulsar/build/kinesis-config.yaml" || echo "Failed to create connector 'kinesis', it might already exist."
-
-echo "Deploying source connector 'pulsar'..."
-${ADMIN_CMD_DOCKER_EXEC} \
-  source \
-  create \
-  --tenant ${TENANT} \
-  --namespace ${NAMESPACE} \
-  --name "pulsar" \
-  --source-type "pulsar" \
-  --destination-topic-name "persistent://public/default/pulsar-input-topic" \
-  --source-config-file "/pulsar/build/pulsar-config.yaml" || echo "Failed to create connector 'pulsar', it might already exist."
+  --name "azure-eventhub" \
+  --source-type "azure-eventhub" \
+  --destination-topic-name "persistent://public/default/kafka-topic" \
+  --source-config-file "/pulsar/build/azure-eventhub-config.yaml" || echo "Failed to create connector 'azure-eventhub', it might already exist."
 
 echo "NOTE: Ensure connector config files from 'deployment/compose/build/' are mounted to '/pulsar/build/' in your Pulsar container (${PULSAR_CONTAINER_NAME})."
 echo "And custom connector NARs are mounted to '/pulsar/connectors/' in ${PULSAR_CONTAINER_NAME}."
@@ -171,7 +160,7 @@ ${ADMIN_CMD_DOCKER_EXEC} \
   --auto-ack true || echo "Failed to create function 'shipment-status-translator', it might already exist."
 
 echo "Deploying function 'event-type-splitter'..."
-${ADMIN_CMD_DOCKER_EXEC} \
+echo ${ADMIN_CMD_DOCKER_EXEC} \
   functions \
   create \
   --tenant ${TENANT} \
