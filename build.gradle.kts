@@ -27,7 +27,7 @@ buildscript {
 
 java {
     toolchain {
-        languageVersion.set(JavaLanguageVersion.of(23)) // Align to Java 23
+        languageVersion.set(JavaLanguageVersion.of(17)) // Align to Java 17
     }
 }
 
@@ -40,7 +40,7 @@ subprojects {
 
     // Configure Kotlin toolchain after the plugin is applied
     plugins.withId("org.jetbrains.kotlin.jvm") {
-        project.extensions.getByType<org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension>().jvmToolchain(23)
+        project.extensions.getByType<org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension>().jvmToolchain(17)
     }
 
     group = "com.acme.pulsar"
@@ -70,7 +70,7 @@ subprojects {
     configure<com.diffplug.gradle.spotless.SpotlessExtension> { kotlin { ktlint(libs.versions.ktlintCli.get()) } }
 
     tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
-        compilerOptions { jvmTarget.set(JvmTarget.JVM_23) } // Explicitly set Kotlin JVM target to 23
+        compilerOptions { jvmTarget.set(JvmTarget.JVM_17) } // Explicitly set Kotlin JVM target to 17
     }
 }
 

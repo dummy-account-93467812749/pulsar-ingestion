@@ -56,8 +56,7 @@ dependencies {
 // Add shadowJar configuration for zip64 support
 tasks.shadowJar {
     isZip64 = true
-    // If a classifier was intended, like "-all", it would be set here:
-    // archiveClassifier.set("all") 
+    configurations = listOf(project.configurations.runtimeClasspath.get())
 }
 
 tasks.register<Zip>("makeNar") {
@@ -73,7 +72,7 @@ tasks.register<Zip>("makeNar") {
 
 /* -------------- container image -------------- */
 jib {
-    from.image = "eclipse-temurin:23-jre" // Ensure this matches your Kotlin JVM target (e.g., JVM_23 as per root project)
+    from.image = "eclipse-temurin:17-jre" // Ensure this matches your Kotlin JVM target (e.g., JVM_17 as per root project)
     to.image   = "ghcr.io/acme/${project.name}:${project.version}" // This seems appropriate for 'translators'
     container.entrypoint = listOf()                    // Function Mesh handles cmd
     // Consider setting container.appRoot or other jib configurations

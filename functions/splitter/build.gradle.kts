@@ -58,6 +58,8 @@ tasks.shadowJar {
 
 tasks.register<Zip>("makeNar") {
     dependsOn(tasks.shadowJar)
+    dependsOn(tasks.named("jar")) // <<< ADD THIS LINE
+
     archiveFileName.set("${project.name}-${project.version}.nar")
     destinationDirectory.set(project.layout.buildDirectory.dir("libs"))
     isZip64 = true
@@ -68,7 +70,7 @@ tasks.register<Zip>("makeNar") {
 }
 
 jib {
-    from.image = "eclipse-temurin:23-jre"
+    from.image = "eclipse-temurin:17-jre"
     to.image   = "ghcr.io/acme/${project.name}:${project.version}"
     container.entrypoint = listOf()
 }
