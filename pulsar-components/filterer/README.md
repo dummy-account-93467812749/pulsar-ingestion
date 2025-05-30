@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Event Type Splitter is a Pulsar Function designed to route `CommonEvent` messages to different Pulsar topics. It receives messages as JSON strings, deserializes them into a `com.example.pulsar.common.CommonEvent` object, and then uses the `eventType` field within this object to determine the appropriate target topic for republishing the original message.
+The Event Type Splitter, located in the `filterer` directory, is a Pulsar Function designed to route `CommonEvent` messages to different Pulsar topics. Its main class is `com.example.pulsar.functions.routing.EventTypeSplitter`. It receives messages as JSON strings, deserializes them into a `com.example.pulsar.common.CommonEvent` object, and then uses the `eventType` field within this object to determine the appropriate target topic for republishing the original message.
 
 -   **Purpose:** Dynamically routes messages based on their content.
 -   **Mechanism:** Inspects the `eventType` field of incoming `CommonEvent` objects.
@@ -37,11 +37,11 @@ The Event Type Splitter is a Pulsar Function designed to route `CommonEvent` mes
 To build the function and produce the necessary JAR file, run the following Gradle command from the root of the project:
 
 ```bash
-./gradlew :functions:splitter:clean :functions:splitter:build
+./gradlew :pulsar-components:filterer:clean :pulsar-components:filterer:build
 ```
 
 This command will compile the function, run its tests, and package it into a fat JAR.
-The output JAR will be located at `functions/splitter/build/libs/splitter.jar`. (If versioning is applied by the build script, it might be `splitter-<VERSION>.jar`). Our `shadowJar` configuration uses `archiveClassifier.set("")`, which typically results in `splitter.jar`.
+The output JAR will be located at `pulsar-components/filterer/build/libs/filterer.jar`. The `shadowJar` configuration typically results in `filterer.jar` (matching the project name) when `archiveClassifier` is empty.
 
 ## Testing the Function
 
@@ -49,11 +49,11 @@ The function module includes both unit and integration tests.
 
 -   **Unit Tests:** Execute the unit tests using:
     ```bash
-    ./gradlew :functions:splitter:test
+    ./gradlew :pulsar-components:filterer:test
     ```
 -   **Integration Tests:** Execute the integration tests, which use Testcontainers to spin up a Pulsar instance, using:
     ```bash
-    ./gradlew :functions:splitter:integrationTest
+    ./gradlew :pulsar-components:filterer:integrationTest
     ```
 
 ## Deployment Example
@@ -62,7 +62,7 @@ Below is an example command for deploying the `EventTypeSplitter` function using
 
 ```bash
 pulsar-admin functions create \
-  --jar path/to/your/functions/splitter/build/libs/splitter.jar \
+  --jar path/to/your/pulsar-components/filterer/build/libs/filterer.jar \
   --classname com.example.pulsar.functions.routing.EventTypeSplitter \
   --inputs persistent://public/default/common-events-topic \
   --name EventTypeSplitterFunction \
