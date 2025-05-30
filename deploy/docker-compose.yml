@@ -1,0 +1,258 @@
+version: '3.8'
+
+networks:
+  app_net:
+    driver: bridge
+    name: ${COMPOSE_PROJECT_NAME:-my_streaming_stack}_app_net
+
+volumes:
+  pulsar_data:
+  zookeeper_data:
+  kafka_data:
+  localstack_data:
+  rabbitmq_data:
+  prometheus_data:
+  grafana_data:
+  loki_data:
+
+services:
+  pulsar:
+    build:
+      context: ./pulsar
+      args:
+        PULSAR_IMAGE_TAG: ${PULSAR_IMAGE_TAG:-3.2.2}
+    hostname: pulsar
+    container_name: pulsar_service # Consistent container name
+    ports:
+      - "6650:6650"
+      - "8080:8080"
+    entrypoint: ["bash", "/pulsar/docker-pulsar-entrypoint.sh"]
+    environment:
+      - PULSAR_MEM=${PULSAR_MEM_OPTS}
+      - PULSAR_PREFIX_forceDeleteTenantAllowed=true
+      - PULSAR_PREFIX_forceDeleteNamespaceAllowed=true
+      - PULSAR_PREFIX_transactionCoordinatorEnabled=true
+      - PULSAR_PREFIX_brokerDeleteInactiveTopicsEnabled=true
+      - PULSAR_PREFIX_allowAutoTopicCreationType=non-partitioned
+      - PULSAR_PREFIX_statsMonitorLevel=0
+      - PULSAR_PREFIX_exposeTopicLevelMetricsInPrometheus=true
+      - PULSAR_PREFIX_exposeConsumerLevelMetricsInPrometheus=true
+      - PULSAR_PREFIX_splitTopicAndPartitionIndexLabel=true
+      - PULSAR_LOG_LEVEL=info # Example: control Pulsar log level
+      - PULSAR_LOG_ROOT_LEVEL=info
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/admin/v2/clusters/standalone"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    volumes:
+      - pulsar_data:/pulsar/data
+    networks:
+      - app_net
+    labels:
+      logging: "promtail" # For Promtail scraping
+
+  zookeeper:
+    image: bitnami/zookeeper:${ZOOKEEPER_IMAGE_TAG:-3.9}
+    hostname: zookeeper
+    container_name: zookeeper_service
+    ports:
+      - "2181:2181"
+    environment:
+      - ALLOW_ANONYMOUS_LOGIN=yes
+      - ZOO_ENABLE_AUTH=no
+    healthcheck:
+      test: ["CMD", "echo", "ruok", "|", "nc", "-w", "2", "localhost", "2181", "|", "grep", "imok"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    volumes:
+      - zookeeper_data:/bitnami/zookeeper
+    networks:
+      - app_net
+    labels:
+      logging: "promtail"
+
+  kafka:
+    image: bitnami/kafka:${KAFKA_IMAGE_TAG:-3.7}
+    hostname: kafka
+    container_name: kafka_service
+    ports:
+      - "19092:19092"
+    environment:
+      - KAFKA_ENABLE_KRAFT=no
+      - KAFKA_CFG_ZOOKEEPER_CONNECT=zookeeper:2181
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092,EXTERNAL://localhost:19092
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,EXTERNAL://:19092
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      - KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT
+      - ALLOW_PLAINTEXT_LISTENER=yes
+    volumes:
+      - kafka_data:/bitnami/kafka
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    networks:
+      - app_net
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    labels:
+      logging: "promtail"
+
+  kafka-exporter:
+    image: danielqsj/kafka-exporter:${KAFKA_EXPORTER_IMAGE_TAG:-latest}
+    hostname: kafka-exporter
+    container_name: kafka_exporter_service
+    command: "--kafka.server=kafka:9092 --log.level=info"
+    ports:
+      - "9308:9308"
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - app_net
+    restart: unless-stopped
+    labels:
+      logging: "promtail"
+
+  localstack:
+    image: localstack/localstack:${LOCALSTACK_IMAGE_TAG:-3.0}
+    hostname: localstack
+    container_name: localstack_service
+    ports:
+      - "4566:4566"
+      - "4510-4559:4510-4559"
+    environment:
+      - SERVICES=kinesis,sqs,sns,s3 # Add more as needed
+      - DEBUG=${DEBUG:-0}
+      - DEFAULT_REGION=${DEFAULT_REGION:-us-east-1}
+      - EAGER_SERVICE_LOADING=1
+      - PERSISTENCE=1
+      - LS_LOG=${LS_LOG:-warn} # Default to warn, can be trace-aws
+    volumes:
+      - localstack_data:/var/lib/localstack
+      - "/var/run/docker.sock:/var/run/docker.sock"
+    networks:
+      - app_net
+    healthcheck:
+      test: ["CMD-SHELL", "awslocal kinesis list-streams --region ${DEFAULT_REGION:-us-east-1} --endpoint-url=http://localhost:4566 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    labels:
+      logging: "promtail"
+
+  rabbitmq:
+    image: rabbitmq:${RABBITMQ_IMAGE_TAG:-3.13-management}
+    hostname: rabbitmq
+    container_name: rabbitmq_service
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+      - "15692:15692"
+    environment:
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_DEFAULT_USER:-user}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_DEFAULT_PASS:-password}
+      - RABBITMQ_PLUGINS=[rabbitmq_management,rabbitmq_prometheus].
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - app_net
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    labels:
+      logging: "promtail"
+
+  prometheus:
+    image: prom/prometheus:v2.49.1 # Updated version
+    hostname: prometheus
+    container_name: prometheus_service
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    networks:
+      - app_net
+    restart: unless-stopped
+    depends_on:
+      - pulsar # Ensure pulsar is at least started
+      - kafka-exporter
+      - rabbitmq
+    labels:
+      logging: "promtail"
+
+  grafana:
+    image: grafana/grafana:${GRAFANA_IMAGE_TAG:-10.2.2}
+    hostname: grafana
+    container_name: grafana_service
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning/:/etc/grafana/provisioning/
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS= # For community plugins if needed
+    networks:
+      - app_net
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+      - loki
+    labels:
+      logging: "promtail"
+
+  loki:
+    image: grafana/loki:2.9.2
+    hostname: loki
+    container_name: loki_service
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml # Uses default internal config
+    volumes:
+      - loki_data:/loki
+    networks:
+      - app_net
+    restart: unless-stopped
+    labels:
+      logging: "promtail"
+
+  promtail:
+    image: grafana/promtail:2.9.2
+    hostname: promtail
+    container_name: promtail_service
+    volumes:
+      - ./promtail/promtail-config.yml:/etc/promtail/config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro # Read access to logs
+      # If you want to persist promtail positions across restarts (and not use a volume):
+      # - ./promtail_positions:/tmp # Ensure this dir exists or map a file
+    command: -config.file=/etc/promtail/config.yml
+    networks:
+      - app_net
+    restart: unless-stopped
+    depends_on:
+      - loki
+    labels:
+      logging: "ignore" # Promtail shouldn't try to scrape its own logs via docker_sd_configs
+

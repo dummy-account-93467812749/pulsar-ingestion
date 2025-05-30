@@ -1,0 +1,40 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: 'pulsar'
+    static_configs:
+      - targets: ['pulsar:8080'] # Pulsar broker metrics endpoint
+
+  - job_name: 'kafka'
+    static_configs:
+      - targets: ['kafka-exporter:9308'] # Kafka exporter
+
+  - job_name: 'rabbitmq'
+    static_configs:
+      - targets: ['rabbitmq:15692'] # RabbitMQ Prometheus plugin endpoint
+
+  - job_name: 'localstack'
+    metrics_path: /_localstack/prometheus/metrics # This path might vary
+    static_configs:
+      - targets: ['localstack:4566']
+
+  - job_name: 'zookeeper'
+    # For simplicity, not adding a ZK exporter now.
+    # If you add one (e.g., running on zookeeper:9141):
+    # static_configs:
+    #   - targets: ['zookeeper:9141']
+    scrape_interval: 30s # Example, can be different
+
+  - job_name: 'loki'
+    static_configs:
+      - targets: ['loki:3100']
+
+  - job_name: 'promtail'
+    static_configs:
+      - targets: ['promtail:9080']

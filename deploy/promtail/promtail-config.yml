@@ -1,0 +1,55 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: system_docker_logs
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+        # To scrape only containers in this compose project:
+        # filters:
+        #  - name: label
+        #    values: ["com.docker.compose.project=${COMPOSE_PROJECT_NAME:-my_streaming_stack}"]
+    relabel_configs:
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/(.*)' # Removes leading slash from container name
+        target_label: 'container'
+      - source_labels: ['__meta_docker_container_log_stream']
+        target_label: 'logstream' # 'stdout' or 'stderr'
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_service']
+        target_label: 'service'
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_project']
+        target_label: 'compose_project'
+      # Add a label for the log file source (docker logs)
+      - target_label: 'source'
+        replacement: 'docker'
+
+  # Example for parsing Pulsar function logs if they have a specific format
+  # This assumes functions log to stdout/stderr of the Pulsar broker container.
+  # - job_name: pulsar_function_logs
+  #   docker_sd_configs:
+  #     - host: unix:///var/run/docker.sock
+  #       refresh_interval: 5s
+  #       filters:
+  #         - name: label
+  #           values: ["com.docker.compose.service=pulsar_service"] # Target only the pulsar service
+  #   relabel_configs:
+  #     - source_labels: ['__meta_docker_container_name']
+  #       regex: '/(.*)'
+  #       target_label: 'container'
+  #     - source_labels: ['__meta_docker_container_label_com_docker_compose_service']
+  #       target_label: 'service'
+  #   pipeline_stages:
+  #     # Example: Look for lines starting with [Function-
+  #     - regex:
+  #         expression: '.*\[Function-(?P<function_name>[^\]]+)\].*'
+  #     # If the regex matches, a 'function_name' label is added
+  #     - labels:
+  #         function_name: # Value comes from the captured group
