@@ -20,7 +20,7 @@ services:
     build:
       context: ./pulsar
       args:
-        PULSAR_IMAGE_TAG: ${PULSAR_IMAGE_TAG:-3.2.2}
+        PULSAR_IMAGE_TAG: ${PULSAR_IMAGE_TAG:-4.0.5}
     hostname: pulsar
     container_name: pulsar_service # Consistent container name
     ports:
