@@ -35,18 +35,11 @@ include(
     "test-kit",
     // Connectors
     "pulsar-components:connectors:azure-eventhub",
-    "pulsar-components:connectors:azure-eventhub-source",
     "pulsar-components:connectors:grpc",
-    "pulsar-components:connectors:grpc-source",
     "pulsar-components:connectors:http",
-    "pulsar-components:connectors:http-source",
     "pulsar-components:connectors:kafka",
-    "pulsar-components:connectors:kafka-source",
     "pulsar-components:connectors:kinesis",
-    "pulsar-components:connectors:kinesis-source",
-    "pulsar-components:connectors:pulsar-source",
     "pulsar-components:connectors:rabbitmq",
-    "pulsar-components:connectors:rabbitmq-source",
     // Filterer (formerly splitter)
     "pulsar-components:filterer",
     // CMF (Custom Message Format translators and integration)
