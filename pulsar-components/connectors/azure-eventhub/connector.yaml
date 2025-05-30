@@ -4,3 +4,4 @@ topic: persistent://public/default/kafka-topic
 configFile: config.sample.yml
 secretKeys: ["KAFKA_BROKERS_SASL_JAAS_CONFIG"] 
 parallelism: 1
+connectorType: kafka

@@ -1,17 +1,26 @@
-awsEndpoint:        "http://localstack:4566"
-dynamoEndpoint:     "http://localstack:4566"
-cloudwatchEndpoint: "http://localstack:4566"
+name: "kinesis-ingest-source"
+tenant: "public"
+namespace: "default"
+topicName: "persistent://public/default/from-kinesis-topic"
+archive: "builtin://kinesis"
 
-awsRegion:            "us-east-1"
-awsKinesisStreamName: "my-kinesis-stream"
+configs:
+  # MUST be the Docker service name in your Compose network:
+  awsEndpoint:        "http://localstack:4566"
+  dynamoEndpoint:     "http://localstack:4566"
+  cloudwatchEndpoint: "http://localstack:4566"
 
-awsCredentialPluginName:  ""
-awsCredentialPluginParam: "{\"accessKey\":\"test\",\"secretKey\":\"test\"}"
+  awsRegion:            "us-east-1"
+  awsKinesisStreamName: "my-kinesis-stream"
 
-applicationName:         "pulsar-kinesis-local"
-initialPositionInStream: "TRIM_HORIZON"
+  # Embed the “test” creds for both Kinesis and DynamoDB:
+  awsCredentialPluginName:  ""
+  awsCredentialPluginParam: "{\"accessKey\":\"test\",\"secretKey\":\"test\"}"
 
-checkpointInterval: 60000
-backoffTime:        3000
-numRetries:         3
-receiveQueueSize:   1000                                                                                                                                                                                                                                 
+  applicationName:         "my-kinesis-stream"
+  initialPositionInStream: "TRIM_HORIZON"
+
+  checkpointInterval: 60000   # ms
+  backoffTime:        3000    # ms
+  numRetries:         3
+  receiveQueueSize:   1000

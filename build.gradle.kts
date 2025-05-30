@@ -574,7 +574,7 @@ fun generateBootstrapScript(
                 }
             }
 
-            val configFileName = "${conn.name}-config.yaml"
+            val configFileName = "${conn.name}-config.json"
             val localConfigFile = connectorConfigsOutDir.resolve(configFileName)
             if (conn.config.isNotEmpty()) {
                 localConfigFile.writeText(yaml.dump(conn.config))

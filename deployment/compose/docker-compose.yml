@@ -26,6 +26,7 @@ services:
     ports:
       - "6650:6650"
       - "8080:8080"
+      - "10999:10999"
     entrypoint: ["bash", "/pulsar/docker-pulsar-entrypoint.sh"]
     environment:
       - PULSAR_MEM=${PULSAR_MEM_OPTS}

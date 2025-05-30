@@ -1,11 +1,23 @@
-# RabbitMQ connection URI or individual parameters
-connectionName: "pulsar-rabbitmq-source"
-host: "localhost"
-port: 5672
-virtualHost: "/"
-# Credentials will be injected via secretKeys
-# username: "${RABBITMQ_USERNAME}"
-# password: "${RABBITMQ_PASSWORD}"
-queueName: "your-rabbitmq-queue"
-# Optional: prefetchCount, etc.
-# prefetchCount: 10
+name: "rabbitmq-ingest-source"
+tenant: "public"
+namespace: "default"
+topicName: "persistent://public/default/from-rabbitmq-topic"
+archive: "builtin://rabbitmq"
+
+configs:
+  host: "rabbitmq"
+  port: 5672
+  virtualHost: "/"      
+  username: "user"
+  password: "password"
+  queueName: "my-queue"
+  connectionName: "rabbitmq-connection"
+  # Optional advanced settings (using default values here)
+  requestedChannelMax: 0
+  requestedFrameMax: 0
+  connectionTimeout: 60000
+  handshakeTimeout: 10000
+  requestedHeartbeat: 60
+  prefetchCount: 0
+  prefetchGlobal: false
+  passive: false

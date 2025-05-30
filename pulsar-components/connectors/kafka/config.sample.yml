@@ -1,9 +1,17 @@
-bootstrapServers: "your-kafka-broker:9092"
-groupId: "pulsar-kafka-group"
-# For SASL auth, you might have:
-# security.protocol: "SASL_SSL"
-# sasl.mechanism: "PLAIN"
-# sasl.jaas.config: "${KAFKA_BROKERS_SASL_JAAS_CONFIG}" # This would be injected from a secret
-topic: "your-kafka-topic-to-read-from" # This is the Kafka topic, not the Pulsar topic
-fetchMessageMaxBytes: 1048576
-autoCommitEnabled: true
+name: "kafka-ingest-source"
+tenant: "public"
+namespace: "default"
+topicName: "persistent://public/default/from-kafka-topic"
+archive: "builtin://kafka"
+
+configs:
+  # Kafka broker address
+  bootstrapServers: "kafka:9092"
+  # Consumer group for offset management
+  groupId: "example-group"
+  # Kafka topic to consume
+  topic: "my-kafka-topic"
+  # Additional consumer settings (optional)
+  sessionTimeoutMs: 10000
+  autoCommitEnabled: false
+  autoCommitIntervalMs: 1000

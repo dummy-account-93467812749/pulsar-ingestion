@@ -41,7 +41,7 @@ ${ADMIN_CMD_DOCKER_EXEC} \
   --name "kinesis" \
   --source-type "kinesis" \
   --destination-topic-name "persistent://public/default/kinesis-topic" \
-  --source-config-file "/pulsar/build/kinesis-config.yaml" || echo "WARNING: Failed to create connector 'kinesis', it might already exist. Check pulsar-admin output above."
+  --source-config-file "/pulsar/build/kinesis-config.json" || echo "WARNING: Failed to create connector 'kinesis', it might already exist. Check pulsar-admin output above."
 
 echo "Deploying source connector 'grpc'..."
 ${ADMIN_CMD_DOCKER_EXEC} \
@@ -52,7 +52,7 @@ ${ADMIN_CMD_DOCKER_EXEC} \
   --name "grpc" \
   --archive "/pulsar/connectors/grpc.nar" \
   --destination-topic-name "persistent://public/default/grpc-topic" \
-  --source-config-file "/pulsar/build/grpc-config.yaml" || echo "WARNING: Failed to create connector 'grpc', it might already exist. Check pulsar-admin output above."
+  --source-config-file "/pulsar/build/grpc-config.json" || echo "WARNING: Failed to create connector 'grpc', it might already exist. Check pulsar-admin output above."
 
 echo "Deploying source connector 'rabbitmq'..."
 ${ADMIN_CMD_DOCKER_EXEC} \
@@ -63,7 +63,7 @@ ${ADMIN_CMD_DOCKER_EXEC} \
   --name "rabbitmq" \
   --source-type "rabbitmq" \
   --destination-topic-name "persistent://public/default/rabbitmq-topic" \
-  --source-config-file "/pulsar/build/rabbitmq-config.yaml" || echo "WARNING: Failed to create connector 'rabbitmq', it might already exist. Check pulsar-admin output above."
+  --source-config-file "/pulsar/build/rabbitmq-config.json" || echo "WARNING: Failed to create connector 'rabbitmq', it might already exist. Check pulsar-admin output above."
 
 echo "Deploying source connector 'http'..."
 ${ADMIN_CMD_DOCKER_EXEC} \
@@ -74,7 +74,7 @@ ${ADMIN_CMD_DOCKER_EXEC} \
   --name "http" \
   --source-type "netty" \
   --destination-topic-name "persistent://public/default/http-netty-input-topic" \
-  --source-config-file "/pulsar/build/http-config.yaml" || echo "WARNING: Failed to create connector 'http', it might already exist. Check pulsar-admin output above."
+  --source-config-file "/pulsar/build/http-config.json" || echo "WARNING: Failed to create connector 'http', it might already exist. Check pulsar-admin output above."
 
 echo "Deploying source connector 'kafka'..."
 ${ADMIN_CMD_DOCKER_EXEC} \
@@ -85,7 +85,7 @@ ${ADMIN_CMD_DOCKER_EXEC} \
   --name "kafka" \
   --source-type "kafka" \
   --destination-topic-name "persistent://public/default/kafka-topic" \
-  --source-config-file "/pulsar/build/kafka-config.yaml" || echo "WARNING: Failed to create connector 'kafka', it might already exist. Check pulsar-admin output above."
+  --source-config-file "/pulsar/build/kafka-config.json" || echo "WARNING: Failed to create connector 'kafka', it might already exist. Check pulsar-admin output above."
 
 echo "Deploying source connector 'azure-eventhub'..."
 ${ADMIN_CMD_DOCKER_EXEC} \
@@ -94,9 +94,9 @@ ${ADMIN_CMD_DOCKER_EXEC} \
   --tenant ${TENANT} \
   --namespace ${NAMESPACE} \
   --name "azure-eventhub" \
-  --source-type "azure-eventhub" \
+  --source-type "kafka" \
   --destination-topic-name "persistent://public/default/kafka-topic" \
-  --source-config-file "/pulsar/build/azure-eventhub-config.yaml" || echo "WARNING: Failed to create connector 'azure-eventhub', it might already exist. Check pulsar-admin output above."
+  --source-config-file "/pulsar/build/azure-eventhub-config.json" || echo "WARNING: Failed to create connector 'azure-eventhub', it might already exist. Check pulsar-admin output above."
 
 echo "NOTE: Ensure connector config files from 'build/' (relative to compose file) are mounted to '/pulsar/build/' in ${PULSAR_CONTAINER_NAME}."
 echo "And custom connector NARs are mounted to '/pulsar/connectors/' in ${PULSAR_CONTAINER_NAME}."
