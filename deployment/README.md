@@ -126,6 +126,77 @@ The `./gradlew generateManifests` task is the central command for preparing depl
     *   Function JAR files (e.g., from `/functions/.../build/libs/`) are mounted into `/pulsar/functions/` inside the Pulsar container.
     The auto-generated `deployment/compose/bootstrap.sh` script assumes these JARs/NARs are available at these conventional paths.
 
+### 5.4. Load Testing Utility Script (`load_test.py`)
+
+A Python script `deployment/compose/scripts/load_test.py` is provided to generate a configurable amount of load for the various source connectors running in the local Docker Compose environment. This helps in quickly verifying if the data ingestion pipeline is working as expected.
+
+**Prerequisites:**
+
+*   Python 3 installed on your system.
+   *   Required Python libraries are listed in `deployment/compose/scripts/requirements.txt`. Install them using pip:
+       Navigate to the scripts directory:
+    ```bash
+       cd deployment/compose/scripts
+    ```
+       Then install the requirements:
+       ```bash
+       pip install -r requirements.txt
+       ```
+       (If you are not in the `deployment/compose/scripts` directory, you can also run `pip install -r deployment/compose/scripts/requirements.txt` from the project root or another location.)
+*   The local Docker Compose environment must be running. Start it from the project root using:
+    ```bash
+    ./gradlew composeUp
+    ```
+    This ensures Pulsar and other services like Kafka and RabbitMQ are active.
+
+**Running the Script:**
+
+Navigate to the `deployment/compose/scripts/` directory or run the script using its full path.
+
+```bash
+python3 deployment/compose/scripts/load_test.py --help
+```
+This will display all available command-line options.
+
+**Key Arguments:**
+
+*   `--connector` (`-c`): (Required) Specify the target connector: `http`, `kafka`, `rabbitmq`.
+*   `--num-messages` (`-n`): (Required) Number of messages to send.
+*   `--payload` (`-p`): (Optional) JSON string to use as a message payload template.
+    *   Special placeholders `<uuid>` and `<iso-timestamp>` will be replaced with a unique ID and current timestamp for each message.
+    *   Default: `{"id": "test-message-<uuid>", "timestamp": "<iso-timestamp>", "data": "Sample load test message"}`
+*   `--threads`: (Optional) Number of concurrent threads to use for sending messages (default: 1).
+*   Connector-specific arguments (e.g., `--http-url`, `--kafka-topic`, `--rabbitmq-queue`, etc.) allow overriding default connection parameters.
+
+**Examples:**
+
+1.  **HTTP Connector:**
+    Send 100 messages to the HTTP connector.
+    ```bash
+    python3 deployment/compose/scripts/load_test.py -c http -n 100
+    ```
+    *   Default URL: `http://pulsar:10999/`. This hostname `pulsar` is resolvable if the script is run from within a container in the same Docker network.
+    *   **Important for external execution:** If you run this script from your host machine (outside the Docker network), you must first ensure port `10999` is mapped for the `pulsar` service in `deployment/compose/docker-compose.yml`. For example, add `- "10999:10999"` to the `ports` section of the `pulsar` service. Then, use `--http-url http://localhost:10999/`.
+
+2.  **Kafka Connector:**
+    Send 500 messages to the default Kafka topic (`kafka-topic-source`).
+    ```bash
+    python3 deployment/compose/scripts/load_test.py -c kafka -n 500
+    ```
+    *   Default Kafka brokers: `localhost:19092`.
+    *   Default Kafka topic: `kafka-topic-source`.
+
+3.  **RabbitMQ Connector:**
+    Send 200 messages to the default RabbitMQ queue (`my-rabbitmq-queue`) using 4 threads.
+    ```bash
+    python3 deployment/compose/scripts/load_test.py -c rabbitmq -n 200 --threads 4
+    ```
+    *   Default RabbitMQ host: `localhost`, port: `5672`.
+    *   Default queue: `my-rabbitmq-queue`.
+    *   Default credentials: `user`/`password`.
+
+This script allows for basic verification of data flow through the configured connectors into Pulsar. You can check the Pulsar logs or use Pulsar admin tools to confirm message reception.
+
 ## 6. Local Development Setup (`/deployment/compose/`)
 
 The `/deployment/compose/` directory is the definitive location for all Docker Compose-based local development configurations. The previously used `/deployment/local-dev/` directory has been removed and its relevant configurations and scripts consolidated into `/deployment/compose/`.
