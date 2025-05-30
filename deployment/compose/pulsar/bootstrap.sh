@@ -164,7 +164,7 @@ ${ADMIN_CMD_DOCKER_EXEC} functions create \
   --namespace ${NAMESPACE} \
   --name "event-type-splitter" \
   --classname "com.example.pulsar.filterer.EventTypeSplitter" \
-  --jar "/pulsar/build/event-type-splitter.nar" \
+  --jar "/pulsar/build/filterer.nar" \
   --inputs "persistent://${TENANT}/${NAMESPACE}/common-events" \
   --auto-ack true || echo "WARNING: Failed to create function 'event-type-splitter', it might already exist. Check pulsar-admin output above."
 

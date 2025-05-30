@@ -69,6 +69,7 @@ functions:
     input: raw-kinesis-events # Single input
     output: common-events
   event-type-splitter:
+    nar: filterer.nar
     image: ghcr.io/acme/splitter:0.1.0
     className: com.example.pulsar.filterer.EventTypeSplitter
     input: common-events
