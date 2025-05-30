@@ -14,21 +14,24 @@ The core of the pipeline leverages Apache Pulsar Functions for:
 
 ## Modules
 
-*   `common/`: Shared code, schemas, and utilities.
+*   `libs/`: Shared code, schemas, and utilities (formerly `common/`).
 *   `test-kit/`: Shared test helpers, MockContext, Testcontainers base.
-*   `connectors/`: Pulsar IO source connectors.
-    *   `azure-eventhub/`: Custom connector for Azure Event Hubs.
-    *   `grpc/`: Custom gRPC connector (Note: source code currently missing).
-    *   `http/`: Custom HTTP source connector.
-    *   `kafka/`: Config-only connector for Apache Kafka (uses native Pulsar IO).
-    *   `kinesis/`: Config-only connector for AWS Kinesis (uses native Pulsar IO).
-    *   `pulsar/`: Custom connector for Pulsar-to-Pulsar use cases.
-    *   `rabbitmq/`: Config-only connector for RabbitMQ (uses native Pulsar IO).
-*   `functions/`: Pulsar Functions for message processing.
-    *   `splitter/`: Implements the EIP Splitter pattern.
-    *   `transforms/`: For various message transformations.
-        *   `stateless/`: Stateless transformations.
-        *   `stateful/`: Stateful transformations (low-priority).
+*   `pulsar-components/`: Houses Pulsar Functions and Connectors.
+    *   `cmf/`: Contains Common Message Format (CMF) translator functions. Representative examples include:
+        *   `pulsar-components/cmf/user-profile-translator/`
+        *   `pulsar-components/cmf/inventory-update-translator/`
+        *   `pulsar-components/cmf/order-record-translator/`
+        *   `pulsar-components/cmf/payment-notice-translator/`
+        *   `pulsar-components/cmf/shipment-status-translator/`
+    *   `filterer/`: Event Type Splitter function (formerly `functions/splitter/`).
+    *   `connectors/`: Pulsar IO source connectors.
+        *   `azure-eventhub/`: Custom connector for Azure Event Hubs.
+        *   `grpc/`: Custom gRPC connector with source code (see `pulsar-components/connectors/grpc/build.gradle.kts`).
+        *   `http/`: Custom HTTP source connector.
+        *   `kafka/`: Config-only connector for Apache Kafka (uses native Pulsar IO).
+        *   `kinesis/`: Config-only connector for AWS Kinesis (uses native Pulsar IO).
+        *   `pulsar/`: Custom connector for Pulsar-to-Pulsar use cases.
+        *   `rabbitmq/`: Config-only connector for RabbitMQ (uses native Pulsar IO).
 *   `deployment/`: Houses deployment configurations and artifacts.
     *   `deployment/pipeline.yaml`: Central configuration file defining functions, tenant, namespace, and overall pipeline structure.
     *   `deployment/worker/`: Contains a standalone Helm chart for deploying the pipeline to Kubernetes using a worker/job-based approach (without FunctionMesh).
@@ -42,7 +45,7 @@ The core of the pipeline leverages Apache Pulsar Functions for:
 
 ## Connector Configuration Schema
 
-Each connector resides in its own subdirectory under `connectors/` named with a unique `<connector-id>` in kebab-case (e.g., `connectors/kafka`). Each connector directory must contain the following:
+Each connector resides in its own subdirectory under `pulsar-components/connectors/` named with a unique `<connector-id>` in kebab-case (e.g., `pulsar-components/connectors/kafka`). Each connector directory must contain the following:
 
 1.  **`connector.yaml`**: Defines the connector's metadata and Pulsar integration.
     *   `name` (string, required): The unique name of the connector. This **must** match the `<connector-id>` (folder name).
