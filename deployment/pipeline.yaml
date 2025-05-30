@@ -41,35 +41,35 @@ connectors:
 functions:
   user-profile-translator:
     image: ghcr.io/acme/translators:0.1.0
-    className: com.example.pulsar.functions.transforms.translators.UserProfileTranslator
+    className: com.example.pulsar.functions.cmf.UserProfileTranslator
     inputs:
       - raw-azure-events
       - raw-pulsar-events
     output: common-events
   order-record-translator:
     image: ghcr.io/acme/translators:0.1.0
-    className: com.example.pulsar.functions.transforms.translators.OrderRecordTranslator
+    className: com.example.pulsar.functions.cmf.OrderRecordTranslator
     inputs:
       - raw-grpc-events
       - raw-rabbitmq-events
     output: common-events
   inventory-update-translator:
     image: ghcr.io/acme/translators:0.1.0
-    className: com.example.pulsar.functions.transforms.translators.InventoryUpdateTranslator
+    className: com.example.pulsar.functions.cmf.InventoryUpdateTranslator
     input: raw-http-events # Single input
     output: common-events
   payment-notice-translator:
     image: ghcr.io/acme/translators:0.1.0
-    className: com.example.pulsar.functions.transforms.translators.PaymentNoticeTranslator
+    className: com.example.pulsar.functions.cmf.PaymentNoticeTranslator
     input: raw-kafka-events # Single input
     output: common-events
   shipment-status-translator:
     image: ghcr.io/acme/translators:0.1.0
-    className: com.example.pulsar.functions.transforms.translators.ShipmentStatusTranslator
+    className: com.example.pulsar.functions.cmf.ShipmentStatusTranslator
     input: raw-kinesis-events # Single input
     output: common-events
   event-type-splitter:
     image: ghcr.io/acme/splitter:0.1.0
-    className: com.example.pulsar.functions.routing.EventTypeSplitter
+    className: com.example.pulsar.filterer.EventTypeSplitter
     input: common-events
     # Outputs are dynamic for this function, so not listed here.
