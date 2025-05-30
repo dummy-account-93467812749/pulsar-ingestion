@@ -3,46 +3,66 @@ set -e
 
 echo "======== CUSTOM PULSAR ENTRYPOINT STARTING ========"
 
-# Default Pulsar command is to start standalone.
-# The base image's entrypoint might have more sophisticated logic to handle PULSAR_MEM, etc.
-# We want to run Pulsar standalone in the background, then run our script,
-# then bring Pulsar to the foreground (or keep the script alive).
+# --- Function to run the bootstrap script ---
+# This will run in the background and wait for Pulsar to be ready.
+run_bootstrap() {
+  echo "[Bootstrap Sub-Process] Waiting for Pulsar to be ready for admin operations (checking http://localhost:8080/admin/v2/clusters/standalone)..."
+  until curl --output /dev/null --silent --head --fail http://localhost:8080/admin/v2/clusters/standalone; do
+    printf '.'
+    sleep 3 # Check a bit more frequently
+  done
+  echo "[Bootstrap Sub-Process] Pulsar is ready for admin operations."
 
-# These are often default flags for pulsar-all standalone, but good to be explicit if functions are critical
-# PULSAR_STANDALONE_FLAGS="--no-stream-storage" # Remove --no-function-worker if you had it
-PULSAR_STANDALONE_FLAGS="" # Let Pulsar use its defaults for functions worker, etc.
+  echo "[Bootstrap Sub-Process] Executing bootstrap script: /pulsar/conf/bootstrap.sh"
+  if [ -f "/pulsar/conf/bootstrap.sh" ]; then
+    # Run with bash and let it inherit set -e or handle its own errors
+    bash /pulsar/conf/bootstrap.sh
+    echo "[Bootstrap Sub-Process] Bootstrap script finished."
+  else
+    echo "[Bootstrap Sub-Process] WARNING: Bootstrap script /pulsar/conf/bootstrap.sh not found."
+  fi
+  echo "[Bootstrap Sub-Process] Finished."
+}
 
-# Start Pulsar standalone in the background
-echo "Starting Pulsar standalone in background..."
-# The PULSAR_MEM env var should be picked up by the pulsar script itself.
-# Any PULSAR_PREFIX_ vars from docker-compose will be applied to conf files.
-/pulsar/bin/pulsar standalone ${PULSAR_STANDALONE_FLAGS} &
-PULSAR_PID=$!
-echo "Pulsar standalone started with PID ${PULSAR_PID}."
+# --- Main Entrypoint Logic ---
 
-# Wait for Pulsar to be healthy using the same healthcheck as in docker-compose
-# (or the bootstrap script's initial wait)
-echo "Waiting for Pulsar to be ready for admin operations (checking http://localhost:8080/admin/v2/clusters/standalone)..."
-until curl --output /dev/null --silent --head --fail http://localhost:8080/admin/v2/clusters/standalone; do
-  printf '.'
-  sleep 5
-done
-echo "Pulsar is ready for admin operations."
+# Run the bootstrap function in the background.
+# It will wait for Pulsar to be ready before executing the actual bootstrap script.
+run_bootstrap &
+BOOTSTRAP_BG_PID=$!
+echo "Bootstrap process launched in background (PID: ${BOOTSTRAP_BG_PID}). It will run once Pulsar is available."
 
-# Execute the bootstrap script
-echo "Executing bootstrap script: /pulsar/conf/bootstrap.sh"
-if [ -f "/pulsar/conf/bootstrap.sh" ]; then
-  bash /pulsar/conf/bootstrap.sh
-  echo "Bootstrap script finished."
-else
-  echo "WARNING: Bootstrap script /pulsar/conf/bootstrap.sh not found."
+# Now, start Pulsar standalone IN THE FOREGROUND.
+# The `exec` command replaces the current shell process with the pulsar command.
+# This makes `pulsar standalone` the main process (PID 1 if this script is PID 1).
+# The container will stay alive as long as `pulsar standalone` is running.
+# Pulsar's own scripts will handle PULSAR_MEM, PULSAR_EXTRA_OPTS, PULSAR_PREFIX_ variables.
+
+# Common flags for standalone:
+# --no-function-worker  (if you don't need functions/connectors initially, but your bootstrap uses them)
+# --no-stream-storage (if you don't need Pulsar's stream storage/table service)
+# --advertised-address (if running in Docker and need to specify accessible address)
+# For your case, you need the functions worker. Stream storage is optional.
+PULSAR_STANDALONE_CMD_FLAGS="--advertised-address localhost" # Adjust if needed, e.g. for Docker networking
+
+echo "Starting Pulsar standalone in FOREGROUND with flags: ${PULSAR_STANDALONE_CMD_FLAGS}..."
+echo "Pulsar logs will be streamed to stdout/stderr of this container."
+
+# Make sure PULSAR_STANDALONE_CONF points to your desired standalone.conf if you have custom settings,
+# e.g., export PULSAR_STANDALONE_CONF=/pulsar/conf/my-standalone.conf
+# Default is /pulsar/conf/standalone.conf
+
+exec /pulsar/bin/pulsar standalone ${PULSAR_STANDALONE_CMD_FLAGS}
+
+# --- This part is unlikely to be reached if `exec` is successful ---
+# If `exec` fails (e.g., pulsar command not found), the script would continue here.
+# If pulsar standalone exits, the container will stop.
+
+# Wait for the background bootstrap process to complete if exec failed or pulsar exited quickly (optional cleanup)
+# This is mostly for completeness; if exec works, this script is replaced.
+if jobs -p | grep -q "${BOOTSTRAP_BG_PID}"; then
+    echo "Pulsar standalone exited or failed to exec. Waiting for bootstrap process (PID: ${BOOTSTRAP_BG_PID}) to finish..."
+    wait ${BOOTSTRAP_BG_PID} || echo "Bootstrap process also finished or had an error."
 fi
 
-echo "Pulsar setup process complete. Pulsar is running with PID ${PULSAR_PID}."
-echo "To stop Pulsar, stop the container."
-
-# Keep the entrypoint script running by waiting for the Pulsar process
-# This ensures the container doesn't exit if Pulsar is still running.
-wait ${PULSAR_PID}
-
-echo "======== CUSTOM PULSAR ENTRYPOINT EXITED ========" # Should not be reached if Pulsar runs indefinitely
+echo "======== CUSTOM PULSAR ENTRYPOINT EXITED (Pulsar standalone process ended or failed to start) ========"

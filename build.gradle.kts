@@ -515,8 +515,8 @@ fun generateHelmManifests(
 fun generateBootstrapScript(
     project: org.gradle.api.Project,
     yaml: Yaml,
-    tenant: String,
-    namespace: String,
+    tenant: String, // This will be overridden by "public" in the script
+    namespace: String, // This will be overridden by "default" in the script
     rawFunctions: Map<String, Map<String, Any>>, // Use raw functions for bootstrap
     connectors: List<ConnectorInfo>,
     composeDir: File,
@@ -526,14 +526,39 @@ fun generateBootstrapScript(
     val bsOut = composeDir.resolve("bootstrap.sh")
     val script = StringBuilder().apply {
         appendLine("#!/usr/bin/env bash")
-        appendLine("set -e")
+        appendLine("# set -e # Exit immediately if a command exits with a non-zero status.")
+        appendLine("# We will manage exit more granularly or rely on the || echo \"WARNING...\" pattern")
         appendLine()
+        appendLine("# --- Configuration for Logging ---")
+        appendLine("LOG_DIR_BASE=\"\${PULSAR_BOOTSTRAP_LOG_DIR:-./pulsar-bootstrap-logs}\" # Base directory for logs relative to script execution")
+        appendLine("TIMESTAMP=\$(date +%Y%m%d_%H%M%S)")
+        appendLine("LOG_FILE=\"\${LOG_DIR_BASE}/pulsar_bootstrap_\${TIMESTAMP}.log\"")
+        appendLine()
+        appendLine("# --- Initial Console Output ---")
+        appendLine("echo \"======== STARTING PULSAR BOOTSTRAP SCRIPT ========\"")
+        appendLine("echo \"Attempting to create log directory: \${LOG_DIR_BASE}\"")
+        appendLine("mkdir -p \"\${LOG_DIR_BASE}\"")
+        appendLine("if [ \$? -ne 0 ]; then")
+        appendLine("  echo \"ERROR: Could not create log directory \${LOG_DIR_BASE}. Exiting.\"")
+        appendLine("  exit 1")
+        appendLine("fi")
+        appendLine("echo \"Logging all output to: \${LOG_FILE}\"")
+        appendLine("echo \"You can tail this file in another terminal: tail -f \\\"\${LOG_FILE}\\\"\"")
+        appendLine("echo \"----------------------------------------------------\"")
+        appendLine()
+        appendLine("# --- Redirect all subsequent output to log file and console ---")
+        appendLine("# Note: This redirection starts *after* the initial messages about the log file.")
+        appendLine("exec > >(tee -a \"\${LOG_FILE}\") 2>&1")
+        appendLine("echo \"Log redirection active. Subsequent output will be in console and \${LOG_FILE}.\"")
+        appendLine()
+
         appendLine("ADMIN_CMD_LOCAL=\"pulsar-admin\"")
         appendLine("PULSAR_CONTAINER_NAME=\"compose-pulsar-1\"")
         appendLine("ADMIN_CMD_DOCKER_EXEC=\"docker exec \${PULSAR_CONTAINER_NAME} bin/pulsar-admin\"")
         appendLine()
-        appendLine("TENANT=\"${tenant}\"")
-        appendLine("NAMESPACE=\"${namespace}\"")
+        // Use "public" tenant and "default" namespace for all operations in this script
+        appendLine("TENANT=\"public\"")
+        appendLine("NAMESPACE=\"default\"")
         appendLine()
         appendLine("echo \"Waiting for Pulsar to be ready (using '\${ADMIN_CMD_LOCAL}')...\"")
         appendLine("until \${ADMIN_CMD_LOCAL} tenants get \${TENANT} > /dev/null 2>&1; do")
@@ -542,15 +567,16 @@ fun generateBootstrapScript(
         appendLine("done")
         appendLine("echo \" Pulsar is ready.\"")
         appendLine()
-        appendLine("echo \"Creating tenant '\${TENANT}' if it doesn't exist (using '\${ADMIN_CMD_LOCAL}')...\"")
+        appendLine("echo \"Ensuring tenant '\${TENANT}' exists (using '\${ADMIN_CMD_LOCAL}')...\"")
         appendLine("\${ADMIN_CMD_LOCAL} tenants create \${TENANT} --allowed-clusters standalone || echo \"Tenant '\${TENANT}' already exists or error creating.\"")
         appendLine()
-        appendLine("echo \"Creating namespace '\${TENANT}/\${NAMESPACE}' if it doesn't exist (using '\${ADMIN_CMD_LOCAL}')...\"")
+        appendLine("echo \"Ensuring namespace '\${TENANT}/\${NAMESPACE}' exists (using '\${ADMIN_CMD_LOCAL}')...\"")
         appendLine("\${ADMIN_CMD_LOCAL} namespaces create \${TENANT}/\${NAMESPACE} --clusters standalone || echo \"Namespace '\${TENANT}/\${NAMESPACE}' already exists or error creating.\"")
         appendLine()
 
         if (connectors.isNotEmpty()) {
             appendLine("# --- Deploy Connectors (using '\${ADMIN_CMD_DOCKER_EXEC}') ---")
+            appendLine("echo \"Deploying connectors to Tenant: \${TENANT}, Namespace: \${NAMESPACE}\"")
         }
         connectors.forEach { conn ->
             val connectorAdminSubCommand = when (conn.type) {
@@ -571,8 +597,8 @@ fun generateBootstrapScript(
 
             appendLine("echo \"Deploying ${conn.type} connector '${conn.name}'...\"")
             val cmd = mutableListOf("\${ADMIN_CMD_DOCKER_EXEC}", connectorAdminSubCommand, "create")
-            cmd.add("--tenant \${TENANT}")
-            cmd.add("--namespace \${NAMESPACE}")
+            cmd.add("--tenant \${TENANT}") // Will use "public"
+            cmd.add("--namespace \${NAMESPACE}") // Will use "default"
             cmd.add("--name \"${conn.name}\"")
 
             if (conn.isCustom) {
@@ -585,16 +611,19 @@ fun generateBootstrapScript(
             }
 
             if (!conn.topic.isNullOrBlank()) {
-                if (conn.type == "source") cmd.add("--destination-topic-name \"${conn.topic}\"")
-                if (conn.type == "sink") cmd.add("--inputs \"${conn.topic}\"")
+                // Ensure topics are fully qualified if not already, using the script's TENANT/NAMESPACE
+                val qualifiedTopic = if (conn.topic.contains("://")) conn.topic else "persistent://\${TENANT}/\${NAMESPACE}/${conn.topic.removePrefix("persistent://public/default/")}"
+
+                if (conn.type == "source") cmd.add("--destination-topic-name \"${qualifiedTopic}\"")
+                if (conn.type == "sink") cmd.add("--inputs \"${qualifiedTopic}\"")
             }
 
             if (conn.config.isNotEmpty()) {
                 val inContainerConfigFilePath = "\"${inContainerConnectorConfigsPath.removeSuffix("/")}/${configFileName}\""
                 cmd.add("--${conn.type}-config-file ${inContainerConfigFilePath}")
             }
-
-            appendLine(cmd.joinToString(separator = " \\\n  ") + " || echo \"Failed to create connector '${conn.name}', it might already exist.\"")
+            // Use consistent warning message style
+            appendLine(cmd.joinToString(separator = " \\\n  ") + " || echo \"WARNING: Failed to create connector '${conn.name}', it might already exist. Check pulsar-admin output above.\"")
             appendLine()
         }
         if (connectors.isNotEmpty()) {
@@ -605,19 +634,35 @@ fun generateBootstrapScript(
 
         if (rawFunctions.isNotEmpty()) {
             appendLine("# --- Deploy Functions (using '\${ADMIN_CMD_DOCKER_EXEC}') ---")
+            appendLine("echo \"Deploying functions to Tenant: \${TENANT}, Namespace: \${NAMESPACE}\"")
         }
         rawFunctions.forEach { (name, func) ->
             val className = func["className"] as? String
-            val output = func["output"] as? String // Note: Mesh adaptation uses 'outputs', bootstrap uses 'output'
-            val parallelism = func["parallelism"] as? Int
-            // Expect NAR file for functions
-            val narFileName = func["nar"] as? String ?: "${name}.nar"
-
-            val inputsString = when (val rawInputs = func["inputs"] ?: func["input"]) {
-                is List<*> -> rawInputs.mapNotNull { it?.toString() }.joinToString(",")
-                is String -> rawInputs
-                else -> null
+            // Function output topic processing (ensure it's fully qualified if not already)
+            var outputTopic = func["output"] as? String
+            if (!outputTopic.isNullOrBlank() && !outputTopic.contains("://")) {
+                 outputTopic = "persistent://\${TENANT}/\${NAMESPACE}/${outputTopic.removePrefix("persistent://public/default/")}"
             }
+
+            val parallelism = func["parallelism"] as? Int
+            val narFileName = func["nar"] as? String ?: "${name}.nar" // Expect NAR file for functions
+
+            // Function input topics processing (ensure they are fully qualified)
+            val rawInputs = func["inputs"] ?: func["input"]
+            val inputsList = when (rawInputs) {
+                is List<*> -> rawInputs.mapNotNull { it?.toString() }
+                is String -> rawInputs.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+                else -> emptyList()
+            }
+            val qualifiedInputs = inputsList.map { inputTopic ->
+                if (!inputTopic.contains("://")) {
+                    "persistent://\${TENANT}/\${NAMESPACE}/${inputTopic.removePrefix("persistent://public/default/")}"
+                } else {
+                    inputTopic
+                }
+            }
+            val inputsString = qualifiedInputs.joinToString(",").takeIf { it.isNotEmpty() }
+
 
             @Suppress("UNCHECKED_CAST")
             val userConfig = func["userConfig"] as? Map<String, Any> ?: emptyMap()
@@ -634,37 +679,42 @@ fun generateBootstrapScript(
                 }
             } else null
 
+            if (className == null) {
+                project.logger.warn("Bootstrap: Skipping function '${name}' because 'className' is not defined.")
+                appendLine("# Skipping function '${name}' - className not defined.")
+                appendLine()
+                return@forEach
+            }
+
             appendLine("echo \"Deploying function '${name}'...\"")
-            // Start command construction for functions create
             val commandStart = "\${ADMIN_CMD_DOCKER_EXEC} functions create"
             val cmdOptions = mutableListOf<String>()
-            cmdOptions.add("--tenant \${TENANT}")
-            cmdOptions.add("--namespace \${NAMESPACE}")
+            cmdOptions.add("--tenant \${TENANT}") // Will use "public"
+            cmdOptions.add("--namespace \${NAMESPACE}") // Will use "default"
             cmdOptions.add("--name \"${name}\"")
-            className?.let { cmdOptions.add("--classname \"$it\"") }
-            // Use --archive and the new path for NAR files
-            cmdOptions.add("--jar \"/pulsar/build/${narFileName}\"")
-            inputsString?.takeIf { it.isNotBlank() }?.let { cmdOptions.add("--inputs \"$it\"") }
-            output?.takeIf { it.isNotBlank() }?.let { cmdOptions.add("--output \"$it\"") }
+            cmdOptions.add("--classname \"${className}\"")
+            cmdOptions.add("--jar \"/pulsar/build/${narFileName}\"") // Path for NARs inside Pulsar container
+
+            inputsString?.let { cmdOptions.add("--inputs \"$it\"") }
+            outputTopic?.let { cmdOptions.add("--output \"$it\"") }
             parallelism?.let { cmdOptions.add("--parallelism $it") }
             userConfigJson?.let { cmdOptions.add("--user-config '$it'") }
             cmdOptions.add("--auto-ack true")
 
-            // Construct the full command string with proper newlines
             appendLine(commandStart + " \\")
-            appendLine(cmdOptions.joinToString(separator = " \\\n  ") + " || echo \"Failed to create function '${name}', it might already exist.\"")
+            appendLine(cmdOptions.joinToString(separator = " \\\n  ") + " || echo \"WARNING: Failed to create function '${name}', it might already exist. Check pulsar-admin output above.\"")
             appendLine()
         }
         if (rawFunctions.isNotEmpty()) {
-            // Update comment to refer to NARs and the /pulsar/build path
             appendLine("echo \"NOTE: Ensure function NARs are mounted to '/pulsar/build/' in your Pulsar container (\${PULSAR_CONTAINER_NAME}).\"")
             appendLine()
         }
 
         appendLine("echo \"------------------------------------------\"")
         appendLine("echo \"Pulsar pipeline bootstrap complete for Compose.\"")
-        appendLine("echo \"Tenant: \${TENANT}, Namespace: \${NAMESPACE}\"")
+        appendLine("echo \"Target Tenant: \${TENANT}, Namespace: \${NAMESPACE}\"") // Will show public/default
         appendLine("echo \"Review notes above for required Docker volume mounts into \${PULSAR_CONTAINER_NAME}.\"")
+        appendLine("echo \"Bootstrap logs are in: \${LOG_FILE}\"")
         appendLine("echo \"------------------------------------------\"")
 
     }.toString()
@@ -674,11 +724,12 @@ fun generateBootstrapScript(
     project.logger.lifecycle("Compose bootstrap script written to ${bsOut.absolutePath}")
     project.logger.lifecycle("Connector configuration files for bootstrap generated in ${connectorConfigsOutDir.absolutePath}")
     project.logger.warn("IMPORTANT: Update your docker-compose.yml to mount:")
-    project.logger.warn("  - '${connectorConfigsOutDir.name}' (from deployment/compose/build) to '${inContainerConnectorConfigsPath}' (for connector configs)")
-    project.logger.warn("  - Your connector NAR files to '/pulsar/connectors/' (for custom connectors)")
-    // Update warning message to refer to NARs and the /pulsar/build path
-    project.logger.warn("  - Your function NAR files to '/pulsar/build/' (for functions)")
+    project.logger.warn("  - '${connectorConfigsOutDir.name}' (from ${composeDir.name}/build, relative to compose file) to '${inContainerConnectorConfigsPath}' (for connector configs)")
+    project.logger.warn("  - Your custom connector NAR files to '/pulsar/connectors/' in the Pulsar container")
+    project.logger.warn("  - Your function NAR files to '/pulsar/build/' in the Pulsar container")
+    project.logger.warn("The bootstrap script will create logs in a './pulsar-bootstrap-logs' directory relative to where it's run.")
 }
+
 
 
 // --- Main Task ---
