@@ -1,4 +1,0 @@
-type: source # or sink
-topic: default-topic
-archive: rabbitmq-source.nar
-connectorType: rabbitmq-source
