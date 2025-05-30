@@ -130,7 +130,7 @@ services:
       - "4566:4566"
       - "4510-4559:4510-4559"
     environment:
-      - SERVICES=kinesis,sqs,sns,s3 # Add more as needed
+      - SERVICES=kinesis,sqs,sns,s3,dynamodb 
       - DEBUG=${DEBUG:-0}
       - DEFAULT_REGION=${DEFAULT_REGION:-us-east-1}
       - EAGER_SERVICE_LOADING=1
