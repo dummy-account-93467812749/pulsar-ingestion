@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -e
 
+echo "HIIIII"
+
 ADMIN_CMD_LOCAL="pulsar-admin"
 PULSAR_CONTAINER_NAME="compose-pulsar-1"
 ADMIN_CMD_DOCKER_EXEC="docker exec ${PULSAR_CONTAINER_NAME} bin/pulsar-admin"
@@ -9,7 +11,8 @@ TENANT="acme"
 NAMESPACE="ingest"
 
 echo "Waiting for Pulsar to be ready (using '${ADMIN_CMD_LOCAL}')..."
-until ${ADMIN_CMD_LOCAL} tenants get ${TENANT} > /dev/null 2>&1; do
+echo until ${ADMIN_CMD_LOCAL} tenants get ${TENANT} do
+until ${ADMIN_CMD_LOCAL} tenants get ${TENANT} do
   echo -n "."
   sleep 5
 done

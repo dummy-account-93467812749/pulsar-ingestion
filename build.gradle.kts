@@ -81,6 +81,38 @@ subprojects {
     }
 }
 
+// In your root build.gradle.kts
+tasks.register("inspectLibsApiElements") {
+    doLast {
+        val libsProject = project(":libs")
+        val apiElements = libsProject.configurations.findByName("apiElements")
+        if (apiElements != null) {
+            println("Inspecting :libs apiElements configuration:")
+            println("  Can be resolved: ${apiElements.isCanBeResolved}")
+            println("  Can be consumed: ${apiElements.isCanBeConsumed}")
+            println("  Attributes:")
+            apiElements.attributes.keySet().forEach { key ->
+                println("    ${key.name}: ${apiElements.attributes.getAttribute(key)}")
+            }
+            println("  Artifacts:")
+            apiElements.artifacts.forEach { artifact ->
+                println("    File: ${artifact.file.name}")
+                println("    Type: ${artifact.type}")
+                println("    Classifier: ${artifact.classifier}")
+                println("    Extension: ${artifact.extension}")
+            }
+            // If it's resolvable (which it shouldn't be for a consumable-only config)
+            // if (apiElements.isCanBeResolved) {
+            //     apiElements.resolve().forEach { file ->
+            //         println("    Resolved file: ${file.name}")
+            //     }
+            // }
+        } else {
+            println(":libs apiElements configuration not found.")
+        }
+    }
+}
+
 // Wire root :build to depend on every subproject’s build
 tasks.named("build") {
   dependsOn(subprojects.map { it.tasks.named("build") })
@@ -151,7 +183,7 @@ tasks.register("bundleForDeploy") {
         // Image pushing is currently not enabled by default in this task.
         // This task currently focuses on copying JARs. Jib tasks (jib, jibDockerBuild) should be run per-project.
 
-        val composeBuildDir = project.file("deployment/compose/build")
+        val composeBuildDir = project.file("deployment/compose/pulsar/build")
         val meshDir = project.file("deployment/mesh")
         val workerDir = project.file("deployment/worker")
 
@@ -707,7 +739,7 @@ tasks.register("generateManifests") {
         )
 
         // 5. Compose Bootstrap Script Generation
-        val composeDir = project.file("deployment/compose")
+        val composeDir = project.file("deployment/compose/pulsar")
         val connectorConfigsOutDir = composeDir.resolve("build").apply { mkdirs() }
         val inContainerConnectorConfigsPath = "/pulsar/build/"
 

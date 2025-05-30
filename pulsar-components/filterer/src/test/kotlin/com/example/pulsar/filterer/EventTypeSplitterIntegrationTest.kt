@@ -1,6 +1,6 @@
-package com.example.pulsar.functions.routing
+package com.example.pulsar.filterer
 
-import com.example.pulsar.common.CommonEvent
+import com.example.pulsar.libs.CommonEvent
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.apache.pulsar.client.admin.PulsarAdmin
 import org.apache.pulsar.client.admin.PulsarAdminException // For ConflictException
@@ -93,7 +93,7 @@ class EventTypeSplitterIntegrationTest {
             name = this@EventTypeSplitterIntegrationTest.functionName
             inputs = Collections.singletonList(this@EventTypeSplitterIntegrationTest.inputTopic)
             runtime = FunctionConfig.Runtime.JAVA
-            className = com.example.pulsar.functions.routing.EventTypeSplitter::class.java.name
+            className = com.example.pulsar.filterer.EventTypeSplitter::class.java.name
             // autoAck = true // Default
         }
 

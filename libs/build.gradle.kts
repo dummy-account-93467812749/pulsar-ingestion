@@ -1,4 +1,4 @@
-// common/build.gradle.kts
+// libs/build.gradle.kts
 plugins {
     id("org.jetbrains.kotlin.jvm") // Version is inherited from root project
 }

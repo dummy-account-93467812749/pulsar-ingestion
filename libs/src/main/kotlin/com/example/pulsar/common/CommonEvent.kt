@@ -1,4 +1,4 @@
-package com.example.pulsar.common
+package com.example.pulsar.libs
 
 import com.fasterxml.jackson.databind.JsonNode
 

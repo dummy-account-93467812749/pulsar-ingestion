@@ -1,6 +1,6 @@
-package com.example.pulsar.functions.transforms.translators
+package com.example.pulsar.functions.cmf
 
-import com.example.pulsar.common.CommonEvent
+import com.example.pulsar.libs.CommonEvent
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper

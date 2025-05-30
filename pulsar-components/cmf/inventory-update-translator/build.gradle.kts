@@ -16,7 +16,7 @@ dependencies {
   // Changed from implementation to testImplementation for local runner
   testImplementation(libs.pulsar.functions.local.runner.original)
 
-  implementation(project(":common")) // Assumes :common module provides necessary shared code
+  implementation(project(":libs")) // Assumes :common module provides necessary shared code
 
   implementation(libs.jackson.module.kotlin)
 

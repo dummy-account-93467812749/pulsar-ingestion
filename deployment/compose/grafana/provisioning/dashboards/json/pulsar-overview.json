@@ -1,0 +1,21 @@
+{
+  "title": "Pulsar Overview (Placeholder)",
+  "uid": "pulsar-overview-placeholder",
+  "panels": [
+    {
+      "type": "text",
+      "title": "Add Pulsar Panels",
+      "gridPos": { "h": 3, "w": 24, "x": 0, "y": 0 },
+      "options": {
+        "content": "Find or create Pulsar dashboards and add them here. Check Grafana.com for community dashboards like ID 10901 (Pulsar overview by StreamNative) or build your own.",
+        "mode": "markdown"
+      }
+    }
+  ],
+  "refresh": "10s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timezone": "browser"
+}

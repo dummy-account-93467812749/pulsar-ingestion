@@ -24,37 +24,6 @@ tasks.named<org.gradle.api.tasks.bundling.Jar>("jar") {
     archiveFileName.set("${project.name}.jar")
 }
 
-// Configure the shadowJar task for lean NAR generation
-tasks.named<com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar>("shadowJar") {
-    archiveBaseName.set(project.name)
-    archiveClassifier.set("")
-    archiveExtension.set("nar")
-    archiveVersion.set("") // Remove the version from the NAR filename
-
-    dependencies {
-        // Exclude Pulsar APIs and other runtime-provided dependencies
-        exclude(dependency("org.apache.pulsar:pulsar-functions-api"))
-        exclude(dependency("org.apache.pulsar:pulsar-client-api"))
-        exclude(dependency("org.apache.pulsar:pulsar-client-admin-original"))
-        exclude(dependency("org.apache.pulsar:pulsar-common"))
-        exclude(dependency("org.apache.pulsar:.*")) // Catch-all for other pulsar deps
-
-        // Exclude logging frameworks
-        exclude(dependency("org.slf4j:.*"))
-        exclude(dependency("ch.qos.logback:.*"))
-        exclude(dependency("org.apache.logging.log4j:.*"))
-
-        // Exclude test dependencies
-        exclude(dependency("org.junit.jupiter:.*"))
-        exclude(dependency("org.testcontainers:.*"))
-        exclude(dependency("io.mockk:.*")) 
-        exclude(dependency(":test-kit")) 
-
-        // Include necessary dependencies
-        include(dependency("com.fasterxml.jackson.core:jackson-databind"))
-        include(dependency("com.fasterxml.jackson.module:jackson-module-kotlin"))
-    }
-}
 
 jacoco {
     toolVersion = libs.versions.jacoco.get() 
@@ -67,7 +36,7 @@ dependencies {
   // Changed from implementation to testImplementation for local runner
   testImplementation(libs.pulsar.functions.local.runner.original)
 
-  implementation(project(":common")) // Assumes :common module provides necessary shared code
+  implementation(project(":libs")) // Assumes :common module provides necessary shared code
 
   implementation(libs.jackson.databind)
   implementation(libs.jackson.module.kotlin)
