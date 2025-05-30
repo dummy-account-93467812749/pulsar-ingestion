@@ -1,4 +1,0 @@
-type: source # or sink
-topic: default-topic
-archive: kinesis-source.nar
-connectorType: kinesis-source
