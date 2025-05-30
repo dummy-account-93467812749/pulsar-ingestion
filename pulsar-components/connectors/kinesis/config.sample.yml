@@ -14,4 +14,4 @@ initialPositionInStream: "TRIM_HORIZON"
 checkpointInterval: 60000
 backoffTime:        3000
 numRetries:         3
-receiveQueueSize:   1000%                                                                                                                                                                                                                                 
+receiveQueueSize:   1000                                                                                                                                                                                                                                 
