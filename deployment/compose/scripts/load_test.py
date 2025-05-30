@@ -12,26 +12,46 @@ import requests
 from kafka.errors import KafkaError
 from kafka import KafkaProducer
 import pika
+import boto3
 
 # --- Logging Setup ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # --- Payload Generation ---
-def generate_payload(template_str: str) -> dict:
+def generate_payload(connector_type: str, base_template_str: str = None) -> dict:
     """
-    Generates a payload by substituting placeholders in the template string.
-    Replaces '<uuid>' with a new UUID and '<iso-timestamp>' with the current UTC ISO timestamp.
+    Generates a payload based on the connector type.
+    Replaces '<uuid>', '<iso-timestamp>', and '<epoch_seconds>'.
     """
-    payload_str = template_str.replace('<uuid>', str(uuid.uuid4()))
-    payload_str = payload_str.replace('<iso-timestamp>', datetime.now(timezone.utc).isoformat())
+    _uuid = str(uuid.uuid4())
+    _iso_timestamp = datetime.now(timezone.utc).isoformat()
+    _epoch_seconds = str(int(datetime.now(timezone.utc).timestamp()))
+
+    payload_template_str = None
+    if connector_type == 'kinesis':
+        payload_template_str = '{"shipId": "<uuid>", "status": "DELIVERED", "deliveredAt": "<epoch_seconds>"}'
+    elif connector_type == 'kafka':
+        payload_template_str = '{"txnId": "<uuid>", "amount": 99.95, "currency": "USD", "time": "<iso-timestamp>"}'
+    elif connector_type == 'http':
+        payload_template_str = '{"sku": "SKU-<uuid>", "qty": 42, "updateTime": "<epoch_seconds>"}'
+    elif connector_type == 'rabbitmq':
+        payload_template_str = '{"orderId": "ORD-<uuid>", "items": ["item1", "item2"], "placedAt": "<iso-timestamp>"}'
+    elif base_template_str: # Fallback to user-provided template if any
+        payload_template_str = base_template_str
+    else: # Default fallback
+        payload_template_str = '{"id": "test-message-<uuid>", "timestamp": "<iso-timestamp>", "data": "Sample load test message"}'
+
+    # Perform substitutions
+    payload_str = payload_template_str.replace('<uuid>', _uuid)
+    payload_str = payload_str.replace('<iso-timestamp>', _iso_timestamp)
+    payload_str = payload_str.replace('<epoch_seconds>', _epoch_seconds)
+    
     try:
         return json.loads(payload_str)
     except json.JSONDecodeError as e:
-        logger.error(f"Error decoding payload JSON: {e}. Payload string: {payload_str}")
-        # Return a default error payload or raise an exception
-        return {"error": "Invalid payload template", "details": str(e)}
-
+        logger.error(f"Error decoding payload JSON for {connector_type}: {e}. Payload string: {payload_str}")
+        return {"error": "Invalid payload generated", "details": str(e)}
 
 # --- HTTP Sender ---
 def send_http_message(url: str, payload_data: dict, message_num: int, verbose: bool):
@@ -100,20 +120,46 @@ def send_rabbitmq_message(host: str, port: int, username: str, password: str, qu
         if connection and connection.is_open:
             connection.close()
 
+# --- Kinesis Sender ---
+def send_kinesis_message(stream_name: str, payload_data: dict, message_num: int, verbose: bool, aws_endpoint_url: str, aws_region: str, aws_access_key_id: str, aws_secret_access_key: str):
+    """Sends a single message to a Kinesis stream."""
+    try:
+        client = boto3.client(
+            'kinesis',
+            endpoint_url=aws_endpoint_url,
+            region_name=aws_region,
+            aws_access_key_id=aws_access_key_id,
+            aws_secret_access_key=aws_secret_access_key
+        )
+        payload_bytes = json.dumps(payload_data).encode('utf-8')
+        partition_key = str(uuid.uuid4())
+        
+        client.put_record(
+            StreamName=stream_name,
+            Data=payload_bytes,
+            PartitionKey=partition_key
+        )
+        if verbose:
+            logger.debug(f"Kinesis message {message_num} sent successfully to stream {stream_name} with partition key {partition_key}")
+        return True, f"Kinesis message {message_num} sent"
+    except Exception as e: # Catching a broad exception as boto3 can raise various ones
+        logger.error(f"Error sending Kinesis message {message_num} to stream {stream_name}: {e}")
+        return False, f"Kinesis message {message_num} failed: {e}"
+
 # --- Main ---
 def main():
     parser = argparse.ArgumentParser(description="Load testing script for various message connectors.")
     
     # Required arguments
-    parser.add_argument('--connector', '-c', choices=['http', 'kafka', 'rabbitmq'], required=True,
+    parser.add_argument('--connector', '-c', choices=['http', 'kafka', 'rabbitmq', 'kinesis'], required=True,
                         help="The connector type to use.")
     parser.add_argument('--num-messages', '-n', type=int, required=True,
                         help="The total number of messages to send.")
 
     # Optional arguments
-    parser.add_argument('--payload', '-p', type=str,
-                        default='{"id": "test-message-<uuid>", "timestamp": "<iso-timestamp>", "data": "Sample load test message"}',
-                        help="JSON string payload template. <uuid> and <iso-timestamp> will be replaced.")
+    # parser.add_argument('--payload', '-p', type=str,
+    #                     default='{"id": "test-message-<uuid>", "timestamp": "<iso-timestamp>", "data": "Sample load test message"}',
+    #                     help="JSON string payload template. <uuid> and <iso-timestamp> will be replaced.")
     
     # HTTP specific arguments
     parser.add_argument('--http-url', default='http://pulsar:10999/',
@@ -138,6 +184,18 @@ def main():
     parser.add_argument('--rabbitmq-password', default='password',
                         help="RabbitMQ password.")
 
+    # Kinesis specific arguments
+    parser.add_argument('--kinesis-stream-name', default='my-kinesis-stream',
+                        help="Kinesis stream name.")
+    parser.add_argument('--kinesis-aws-endpoint-url', default='http://localhost:4566',
+                        help="Kinesis AWS endpoint URL (for LocalStack).")
+    parser.add_argument('--kinesis-aws-region', default='us-east-1',
+                        help="Kinesis AWS region.")
+    parser.add_argument('--kinesis-aws-access-key-id', default='test',
+                        help="Kinesis AWS access key ID.")
+    parser.add_argument('--kinesis-aws-secret-access-key', default='test',
+                        help="Kinesis AWS secret access key.")
+
     # General arguments
     parser.add_argument('--threads', type=int, default=1,
                         help="Number of threads to use for sending messages.")
@@ -159,7 +217,9 @@ def main():
     with ThreadPoolExecutor(max_workers=args.threads) as executor:
         futures = []
         for i in range(args.num_messages):
-            payload_to_send = generate_payload(args.payload)
+            # Pass connector type to generate_payload.
+            # The user-provided --payload is effectively removed, so we pass None for base_template_str
+            payload_to_send = generate_payload(connector_type=args.connector)
             if payload_to_send.get("error"): # Check if payload generation failed
                 logger.error(f"Skipping message {i+1} due to payload generation error: {payload_to_send['details']}")
                 messages_failed += 1
@@ -170,9 +230,13 @@ def main():
             elif args.connector == 'kafka':
                 futures.append(executor.submit(send_kafka_message, args.kafka_brokers, args.kafka_topic, payload_to_send, i + 1, args.verbose))
             elif args.connector == 'rabbitmq':
-                futures.append(executor.submit(send_rabbitmq_message, args.rabbitmq_host, args.rabbitmq_port, 
-                                               args.rabbitmq_username, args.rabbitmq_password, args.rabbitmq_queue, 
+                futures.append(executor.submit(send_rabbitmq_message, args.rabbitmq_host, args.rabbitmq_port,
+                                               args.rabbitmq_username, args.rabbitmq_password, args.rabbitmq_queue,
                                                payload_to_send, i + 1, args.verbose))
+            elif args.connector == 'kinesis':
+                futures.append(executor.submit(send_kinesis_message, args.kinesis_stream_name, payload_to_send, i + 1, args.verbose,
+                                               args.kinesis_aws_endpoint_url, args.kinesis_aws_region,
+                                               args.kinesis_aws_access_key_id, args.kinesis_aws_secret_access_key))
             
             # Small delay to avoid overwhelming the executor submission queue, especially with high message counts
             if args.num_messages > 1000 and i % 100 == 0:
