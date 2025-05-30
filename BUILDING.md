@@ -1,100 +1,74 @@
 # Building the Project
 
-This project uses [Gradle](https://gradle.org/) as its build system. You do not need to install Gradle manually; the project includes a Gradle Wrapper (`gradlew` for Linux/macOS and `gradlew.bat` for Windows) that will automatically download and use the correct Gradle version.
+This document provides instructions for building the project, its subprojects, and understanding the artifact generation process.
 
-The current Gradle version used by the wrapper is 8.1.1.
+## Prerequisites
+- Git (for cloning the repository)
+- Gradle Wrapper (provided with the project)
 
-## Common Build Operations
+## Using the Gradle Wrapper
+The project uses the Gradle Wrapper to ensure a consistent build environment. Always use `./gradlew` (on Linux/macOS) or `gradlew.bat` (on Windows) for executing Gradle tasks.
 
-Make sure you are in the root directory of the project before running these commands.
+Examples:
+- To build all modules: `./gradlew build`
+- To clean the project: `./gradlew clean`
 
-### 1. Clean Build Artifacts
+## Java Version
+This project is configured to use Java 17. Ensure your environment is compatible, or rely on the Gradle toolchain feature to manage the JDK.
 
-To remove all build outputs from previous builds (e.g., compiled classes, JAR files):
-
-```bash
-./gradlew clean
-```
-On Windows:
-```bash
-.\gradlew.bat clean
-```
-
-### 2. Build the Entire Project
-
-To compile all modules, run tests, and assemble all artifacts (e.g., JAR files):
-
-```bash
-./gradlew build
-```
-On Windows:
-```bash
-.\gradlew.bat build
-```
-This command will compile the source code, run any unit tests, and create distributable files (like JARs) in the `build` directory of each subproject.
-
-### 3. Run Tests
-
-To execute all unit tests across all subprojects:
-
-```bash
-./gradlew test
-```
-On Windows:
-```bash
-.\gradlew.bat test
-```
-Test reports can typically be found in `[subproject]/build/reports/tests/test/index.html`.
+## Common Gradle Tasks
+- `build`: Compiles, tests, and assembles all modules.
+- `clean`: Deletes build artifacts.
+- `test`: Runs unit tests for all modules.
+- `integrationTest`: Runs integration tests for all modules (if configured).
+- `spotlessCheck`: Checks code formatting.
+- `spotlessApply`: Applies code formatting.
 
 ## Working with Specific Subprojects
+You can run Gradle tasks for specific subprojects. For example:
+- To build only the `common` module: `./gradlew :common:build`
+- To run tests for the `user-profile-translator` function: `./gradlew :functions:translators:user-profile-translator:test`
 
-You can build or test individual subprojects. Subprojects are identified by their path from the root project, prefixed with a colon. For example: `:common`, `:connectors:kinesis-source`.
+## Artifact Generation
+- **Lean JARs:** Some older function modules or certain utility modules may still be configured to produce lean JAR files. These JARs contain only the module's compiled code and resources, without bundling common dependencies like Pulsar APIs or test frameworks.
+- **NAR files:** 
+  - All translator functions (e.g., `shipment-status-translator`, `user-profile-translator`, etc., under `functions/translators/`) are now configured to produce **lean NAR (Pulsar Archive) files**. These NARs (e.g., `shipment-status-translator.nar`, with no version in the filename) bundle the function's compiled code and only its essential runtime dependencies (like Jackson). They specifically exclude Pulsar APIs, logging frameworks, and test dependencies, which are provided by the Pulsar runtime. This makes them the standard packaging format for deploying these functions.
+  - Similarly, custom connectors built from source within this repository (e.g., the `connectors/grpc` project) are now also configured to produce version-less, lean NAR files (e.g., `grpc.nar`). These also exclude Pulsar-provided libraries and include only their essential runtime dependencies.
+  - Other modules like `functions:splitter` may still produce NARs, potentially with different dependency bundling characteristics.
+- **Container Images (Jib):** Subprojects intended for containerization (like functions and connectors) are typically configured with the Google Jib plugin. You can build container images directly using tasks like:
+  - `./gradlew :<subproject-path>:jibDockerBuild` (builds to local Docker daemon)
+  - `./gradlew :<subproject-path>:jib` (builds and pushes to a configured remote registry)
 
-### Build a Specific Subproject
+## Bundling Artifacts for Deployment
 
-To build a single subproject (e.g., `:common`):
+The project includes a special Gradle task `bundleForDeploy` designed to collect all necessary artifacts for various deployment scenarios.
 
+To run this task:
 ```bash
-./gradlew :common:build
-```
-On Windows:
-```bash
-.\gradlew.bat :common:build
-```
-Replace `:common` with the name of the subproject you want to build (e.g., `:connectors:kinesis-source`, `:functions:splitter`).
-
-### Test a Specific Subproject
-
-To run tests for a single subproject (e.g., `:common`):
-
-```bash
-./gradlew :common:test
-```
-On Windows:
-```bash
-.\gradlew.bat :common:test
+./gradlew bundleForDeploy
 ```
 
-## Using the Gradle Wrapper (`gradlew`)
+### What it Does:
+-   **Collects Lean Artifacts:** This task scans through relevant `functions` and `connectors` submodules.
+    -   For `functions` subprojects (specifically translators), it exclusively looks for and collects their **lean NAR files** (e.g., `user-profile-translator.nar`). If a NAR is not found for a translator, a warning is logged, and no JAR fallback occurs.
+    -   For custom `connectors` built from source (e.g., `connectors/grpc`), it now also looks for and collects their **lean NAR files** (e.g., `grpc.nar`).
+    -   For other modules (like `functions:splitter` or pre-built connectors defined only by YAML), it may collect lean JARs or other NAR types as configured/available.
+-   Test utility modules (e.g., those ending in `-integration`) are excluded.
 
-The Gradle Wrapper scripts (`gradlew` and `gradlew.bat`) are included in this repository. When you run a command using the wrapper, it automatically:
-1. Checks if the specified Gradle version (defined in `gradle/wrapper/gradle-wrapper.properties`) is downloaded.
-2. If not, it downloads the correct Gradle version.
-3. Executes the requested Gradle task using that version.
+### Output Directories:
+The collected artifacts (including NARs for translators and connectors, and JARs/NARs for other components) are copied into the following directories:
+-   `deployment/compose/build/`: Primarily for Docker Compose deployments.
+-   `deployment/mesh/`: For deployments using Pulsar Function Mesh.
+-   `deployment/worker/`: For traditional Pulsar Function/Connector worker deployments.
 
-This ensures build consistency across different environments and users, as everyone uses the same Gradle version and configuration. **It is the recommended way to interact with the build system.**
+This task ensures that you have a consolidated set of deployable units ready for your chosen deployment method. It does *not* build container images directly; container image building (e.g., using Jib) is handled within each individual module's build process (e.g., `./gradlew :functions:translators:user-profile-translator:jibBuildDocker`).
 
-## Optional: Installing Gradle Manually
+**Note on `bundleForDeploy` and Task Execution:**
+The `bundleForDeploy` task is configured to depend on the `build` task (i.e., `dependsOn("build")`). This ensures that Gradle attempts to build all necessary subprojects before bundling artifacts. However, due to Gradle's up-to-date checks, if no source files or build script inputs have changed since the last build, Gradle may mark many tasks as `UP-TO-DATE` and skip their execution for efficiency. If you need to ensure a complete, fresh rebuild of all artifacts before bundling, run `./gradlew clean build` followed by `./gradlew bundleForDeploy`, or combine them like `./gradlew clean bundleForDeploy` (as `bundleForDeploy` triggers `build`).
 
-While the wrapper is recommended, if you prefer to use a system-wide Gradle installation:
-
-1.  **Download Gradle**: You can download Gradle from the official [Gradle releases page](https://gradle.org/releases/). Download version 8.1.1 or newer for compatibility.
-2.  **Installation**: Follow the installation instructions provided on the Gradle website for your operating system. This usually involves unzipping the downloaded file and adding Gradle's `bin` directory to your system's PATH environment variable.
-3.  **Verify Installation**: Open a new terminal window and run `gradle --version` to ensure it's installed correctly.
-
-Even with a system-wide Gradle installation, you can still use the `gradlew` wrapper within this project to ensure you're using the project-defined Gradle version.
+**Note on Docker Compose and Function NARs:** When using Docker Compose with the generated `bootstrap.sh` script (found in `deployment/compose/`), translator function NARs are deployed using the `--archive` flag. The `bootstrap.sh` script expects these NARs to be available inside the Pulsar container under the `/pulsar/build/` directory. Therefore, you'll need to ensure your `docker-compose.yml` correctly mounts the NAR files from your host's `deployment/compose/build/` directory to `/pulsar/build/` in the Pulsar container (e.g., host `deployment/compose/build/shipment-status-translator.nar` to container `/pulsar/build/shipment-status-translator.nar`).
 
 ## Troubleshooting
-
-*   **`./gradlew: Permission denied` (Linux/macOS)**: If you get a permission error, ensure the `gradlew` script is executable: `chmod +x gradlew`.
-*   **Build failures**: Check the console output for error messages. Often, they will point to issues in specific build files or source code.
+- **Toolchain issues:** If you see errors related to "No matching toolchains found", ensure you have a JDK 17 installed and discoverable by Gradle, or configure Gradle to auto-download JDKs.
+- **Test failures:** Refer to the HTML test reports generated in `<subproject>/build/reports/tests/` for details on any failing tests.
+```

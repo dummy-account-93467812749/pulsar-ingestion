@@ -2,58 +2,7 @@
 
 plugins {
     id("com.google.cloud.tools.jib")
-    alias(libs.plugins.shadow) // Added shadow plugin
-    // Add java-library for standard JAR output capabilities if not already implicitly provided
-    // For Pulsar functions, a simple JAR is often packaged into a NAR or used by Jib directly.
-    // If the project structure implies standard library practices, uncomment:
-    // id("java-library") 
-}
-
-// Apply Kotlin plugin if not inherited from parent or if this is a standalone module setup
-// plugins {
-//     id("org.jetbrains.kotlin.jvm") version "your_kotlin_version" // Or use alias(libs.plugins.kotlin.jvm) if defined
-// }
-
-
-// Ensure group and version are set, or inherit from parent project if applicable
-// group = "com.acme.pulsar.functions.translators" // Or as appropriate
-// version = "0.1.0-SNAPSHOT" // Or as appropriate
-
-// Configure the standard JAR task
-tasks.named<org.gradle.api.tasks.bundling.Jar>("jar") {
-    archiveFileName.set("${project.name}.jar")
-}
-
-// Configure the shadowJar task for lean NAR generation
-tasks.named<com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar>("shadowJar") {
-    archiveBaseName.set(project.name)
-    archiveClassifier.set("")
-    archiveExtension.set("nar")
-    archiveVersion.set("") // Remove the version from the NAR filename
-
-    dependencies {
-        // Exclude Pulsar APIs and other runtime-provided dependencies
-        exclude(dependency("org.apache.pulsar:pulsar-functions-api"))
-        exclude(dependency("org.apache.pulsar:pulsar-client-api"))
-        exclude(dependency("org.apache.pulsar:pulsar-client-admin-original"))
-        exclude(dependency("org.apache.pulsar:pulsar-common"))
-        exclude(dependency("org.apache.pulsar:.*")) // Catch-all for other pulsar deps
-
-        // Exclude logging frameworks
-        exclude(dependency("org.slf4j:.*"))
-        exclude(dependency("ch.qos.logback:.*"))
-        exclude(dependency("org.apache.logging.log4j:.*"))
-
-        // Exclude test dependencies
-        exclude(dependency("org.junit.jupiter:.*"))
-        exclude(dependency("org.testcontainers:.*"))
-        exclude(dependency("io.mockk:.*")) 
-        exclude(dependency(":test-kit")) 
-
-        // Include necessary dependencies
-        include(dependency("com.fasterxml.jackson.core:jackson-databind"))
-        include(dependency("com.fasterxml.jackson.module:jackson-module-kotlin"))
-    }
+    alias(libs.plugins.shadow)
 }
 
 jacoco {
@@ -61,7 +10,7 @@ jacoco {
 }
 
 dependencies {
-  implementation(platform(libs.pulsar.bom))
+  //implementation(platform(libs.pulsar.bom))
   implementation(libs.pulsar.functions.api)
 
   // Changed from implementation to testImplementation for local runner
@@ -69,7 +18,6 @@ dependencies {
 
   implementation(project(":common")) // Assumes :common module provides necessary shared code
 
-  implementation(libs.jackson.databind)
   implementation(libs.jackson.module.kotlin)
 
   testImplementation(project(":test-kit")) // For test utilities and configurations
@@ -96,5 +44,9 @@ jib {
     // }
 }
 
+
+tasks.named("assemble") {
+    dependsOn(tasks.named("makeNar"))
+}
 // tasks.jar is now configured above.
 // The shadowJar task will be available.

@@ -70,6 +70,8 @@ subprojects {
         }
     }
 
+    
+
     tasks.withType<Test>().configureEach { useJUnitPlatform() }
 
     configure<com.diffplug.gradle.spotless.SpotlessExtension> { kotlin { ktlint(libs.versions.ktlintCli.get()) } }
@@ -77,6 +79,11 @@ subprojects {
     tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
         compilerOptions { jvmTarget.set(JvmTarget.JVM_17) } // Explicitly set Kotlin JVM target to 17
     }
+}
+
+// Wire root :build to depend on every subproject’s build
+tasks.named("build") {
+  dependsOn(subprojects.map { it.tasks.named("build") })
 }
 
 /**
@@ -136,7 +143,7 @@ subprojects {
 tasks.register("bundleForDeploy") {
     group = "deployment"
     description = "Bundles artifacts for deployment."
-    dependsOn("build", "generateManifests")
+    dependsOn("generateManifests")
 
     doLast {
         // Jib integration: The Jib plugin is now available. 
@@ -602,7 +609,7 @@ fun generateBootstrapScript(
             cmdOptions.add("--name \"${name}\"")
             className?.let { cmdOptions.add("--classname \"$it\"") }
             // Use --archive and the new path for NAR files
-            cmdOptions.add("--archive \"/pulsar/build/${narFileName}\"")
+            cmdOptions.add("--jar \"/pulsar/build/${narFileName}\"")
             inputsString?.takeIf { it.isNotBlank() }?.let { cmdOptions.add("--inputs \"$it\"") }
             output?.takeIf { it.isNotBlank() }?.let { cmdOptions.add("--output \"$it\"") }
             parallelism?.let { cmdOptions.add("--parallelism $it") }
@@ -644,6 +651,7 @@ fun generateBootstrapScript(
 tasks.register("generateManifests") {
     group = "generation"
     description = "Gathers pipeline data, prepares Helm values, generates manifests, and composes bootstrap script."
+    dependsOn("build")
 
     doLast {
         val yaml = Yaml() // Create once

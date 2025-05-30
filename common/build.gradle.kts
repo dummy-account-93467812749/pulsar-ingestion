@@ -13,5 +13,5 @@ dependencies {
     // kotlin("stdlib-jdk8") automatically uses the version from the Kotlin plugin.
     // This is generally fine. If you had added kotlin-stdlib-jdk8 to your catalog,
     // you could use implementation(libs.kotlin.stdlib.jdk8)
-    implementation(kotlin("stdlib-jdk8"))
+    //implementation(kotlin("stdlib-jdk8"))
 }
