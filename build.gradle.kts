@@ -157,9 +157,11 @@ tasks.register("bundleForDeploy") {
 
         val collectedArtifactFiles = mutableListOf<File>()
         subprojects.forEach { subproject ->
-            // Only process subprojects that are under :functions or :connectors AND have a build script,
-            // AND whose names do not end with "-integration"
-            if ((subproject.path.startsWith(":functions") || subproject.path.startsWith(":connectors")) &&
+            // Only process subprojects that are under :pulsar-components:cmf, :pulsar-components:filterer or :pulsar-components:connectors 
+            // AND have a build script, AND whose names do not end with "-integration"
+            if ((subproject.path.startsWith(":pulsar-components:cmf") || 
+                 subproject.path.startsWith(":pulsar-components:filterer") || 
+                 subproject.path.startsWith(":pulsar-components:connectors")) &&
                 subproject.file("build.gradle.kts").exists() &&
                 !subproject.name.endsWith("-integration")) {
                 
@@ -167,8 +169,8 @@ tasks.register("bundleForDeploy") {
                 var foundArtifact: File? = null
 
                 if (libsDir.exists() && libsDir.isDirectory) {
-                    // Prioritize .nar for :functions subprojects
-                    if (subproject.path.startsWith(":functions")) {
+                    // Prioritize .nar for function-like subprojects (cmf and filterer)
+                    if (subproject.path.startsWith(":pulsar-components:cmf") || subproject.path.startsWith(":pulsar-components:filterer")) {
                         val narFiles = libsDir.listFiles { file ->
                             file.isFile && file.name.endsWith(".nar")
                         }?.toList() ?: emptyList()
@@ -181,7 +183,7 @@ tasks.register("bundleForDeploy") {
                             project.logger.warn("WARNING: No NAR artifact found for function subproject ${subproject.path} in ${libsDir.absolutePath}. Skipping artifact collection for this function.")
                             // foundArtifact remains null, so it won't be added to collectedArtifactFiles
                         }
-                    } else { // For non-function projects (e.g., connectors)
+                    } else { // For non-function projects (e.g., connectors under :pulsar-components:connectors)
                         // Fallback to .jar (existing logic for connectors)
                         val jarFiles = libsDir.listFiles { file ->
                             file.isFile &&
@@ -345,10 +347,10 @@ fun loadPipelineGlobalConfig(project: org.gradle.api.Project, yaml: Yaml): Pipel
 
 fun loadConnectorInfo(project: org.gradle.api.Project, yaml: Yaml): List<ConnectorInfo> {
     val connectorEntries = mutableListOf<ConnectorInfo>()
-    val connectorsDir = project.file("connectors")
+    val connectorsDir = project.file("pulsar-components/connectors")
 
     if (!connectorsDir.isDirectory) {
-        project.logger.warn("Connectors directory 'connectors/' not found or is not a directory.")
+        project.logger.warn("Connectors directory 'pulsar-components/connectors/' not found or is not a directory.")
         return emptyList()
     }
 
