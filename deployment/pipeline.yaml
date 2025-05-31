@@ -68,9 +68,31 @@ functions:
     className: com.example.pulsar.functions.cmf.ShipmentStatusTranslator
     input: raw-kinesis-events # Single input
     output: common-events
+
+  geotab-translator:
+    image: ghcr.io/acme/translators:0.1.0
+    className: com.example.pulsar.functions.cmf.translators.GeotabTranslator
+    inputs:
+      - raw-kinesis-events # Example input
+    output: persistent://acme/ingest/vehicle-telemetry-common-format
+
+  calamp-translator:
+    image: ghcr.io/acme/translators:0.1.0
+    className: com.example.pulsar.functions.cmf.translators.CalAmpTranslator
+    inputs:
+      - raw-kafka-events # Example input
+    output: persistent://acme/ingest/vehicle-telemetry-common-format
+
+  ford-translator:
+    image: ghcr.io/acme/translators:0.1.0
+    className: com.example.pulsar.functions.cmf.translators.FordTranslator
+    inputs:
+      - raw-http-events # Example input
+    output: persistent://acme/ingest/vehicle-telemetry-common-format
+
   event-type-splitter:
     nar: filterer.nar
     image: ghcr.io/acme/splitter:0.1.0
     className: com.example.pulsar.filterer.EventTypeSplitter
-    input: common-events
+    input: persistent://acme/ingest/vehicle-telemetry-common-format
     # Outputs are dynamic for this function, so not listed here.

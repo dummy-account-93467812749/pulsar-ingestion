@@ -48,5 +48,6 @@ include(
     "pulsar-components:cmf:payment-notice-translator",
     "pulsar-components:cmf:shipment-status-translator",
     "pulsar-components:cmf:user-profile-translator",
+    "pulsar-components:cmf:vehicle-telemetry-translators",
     "pulsar-components:cmf:translators-integration"
 )
