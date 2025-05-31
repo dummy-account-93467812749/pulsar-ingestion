@@ -7,7 +7,7 @@ This document outlines the architecture of the Pulsar Ingestion project, focusin
 *   **Modularity:** Connectors and functions are designed as independent modules. For example, translator functions under `pulsar-components/cmf/` are implemented as individual submodules, each building a separate artifact.
 *   **Extensibility:** The framework allows for easy addition of new source connectors and processing functions.
 *   **Scalability:** Leveraging Pulsar's native scalability for message ingestion and processing.
-*   **Testability:** Emphasis on unit and integration testing for each component. Integration tests for all connectors are centralized in the `pulsar-components/connectors/test/` directory. (Note: This path might need verification if connector tests are structured differently).
+*   **Testability:** Emphasis on unit and integration testing for each component. Integration tests for all connectors are centralized in the `pulsar-components/connectors/test/` directory (path may vary). Similarly, individual processing functions like translators and the `filterer` have dedicated integration tests within their respective modules (e.g., `pulsar-components/cmf/translators-integration/` and `pulsar-components/filterer/`).
 
 ## System Components
 
@@ -68,11 +68,11 @@ Pulsar Functions are used for tasks like message transformation and enrichment.
 
 ### Translator Functions
 Located under `pulsar-components/cmf/` (Common Message Format translators), these functions are responsible for converting messages from various source formats into a common schema.
--   **Structure:** The `pulsar-components/cmf/` directory acts as a parent for multiple individual translator submodules (e.g., `user-profile-translator`, `order-record-translator` located under `pulsar-components/cmf/user-profile-translator/`, etc.).
--   **Artifacts:** Each translator submodule is independently built and produces its own lean NAR file (Pulsar Archive). These NARs are then collected by the `bundleForDeploy` task for deployment.
--   **Testing:** Unit tests are specific to each translator submodule. Shared integration tests for translators are located in the `pulsar-components:cmf:translators-integration` module.
+-   **Structure:** The `pulsar-components/cmf/` directory primarily houses the `vehicle-telemetry-translators` module, which contains translators dedicated to converting various vehicle telemetry formats into the Common Message Format (CMF).
+-   **Artifacts:** Each translator within the `vehicle-telemetry-translators` module is part of this single submodule, which is independently built and produces its own lean NAR file (Pulsar Archive). This NAR is then collected by the `bundleForDeploy` task for deployment.
+-   **Testing:** Unit tests are specific to each translator's logic. Shared integration tests for these vehicle telemetry translators are located in the `pulsar-components:cmf:translators-integration` module.
 
-### Vehicle Telemetry Processing (CMF)
+### Vehicle Telemetry Processing (CMF) and Filtering
 
 A key application of translator functions within this project is the processing of vehicle telemetry data. To standardize this data from various sources, a **Vehicle Telemetry Common Message Format (CMF)** has been introduced.
 
@@ -110,9 +110,14 @@ The introduction of the CMF and its associated translators modifies the data flo
 2.  The respective Vehicle Telemetry Translator function (e.g., `GeotabTranslator`) consumes messages from its designated raw input topic.
 3.  The translator function transforms the source-specific message into the `CommonMessageFormat`.
 4.  The resulting CMF message is then published to the common output topic: `persistent://acme/ingest/vehicle-telemetry-common-format`.
-5.  Downstream consumers, such as an `event-type-splitter` function or analytics jobs, can now subscribe to this single, standardized topic to process telemetry data from all supported vehicle sources. This simplifies downstream logic as these components only need to understand the CMF structure.
+5.  The `filterer` function (formerly `EventTypeSplitter`) consumes these standardized CMF messages from `persistent://acme/ingest/vehicle-telemetry-common-format`.
+    *   It parses each `CommonMessageFormat` message.
+    *   It extracts the `tenantId` from the `meta.tenantId` field within the CMF message.
+    *   Based on this `tenantId`, it routes the original CMF message (as a string) to a dynamic, tenant-specific topic: `persistent://{tenantId}/integration/telemetry`.
+    *   If the `tenantId` is missing or blank, the message is not routed.
+6.  Downstream consumers or analytics jobs specific to a tenant can then subscribe to their dedicated topic (e.g., `persistent://tenant-a/integration/telemetry`) to process relevant telemetry data. This simplifies downstream logic by isolating data per tenant and ensuring consumers only process data they are authorized for or interested in.
 
-This CMF-based approach enhances modularity and makes it easier to integrate new vehicle telemetry sources in the future by simply developing a new translator for that source.
+This CMF-based approach, coupled with the `filterer` function, enhances modularity, data isolation, and makes it easier to integrate new vehicle telemetry sources and onboard new tenants in the future.
 
 ---
 
