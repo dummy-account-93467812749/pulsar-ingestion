@@ -22,12 +22,10 @@ dependencies {
     implementation(platform(libs.pulsar.bom))
     implementation(libs.pulsar.functions.api) // For Function, Context etc. if used directly in tests, though usually comes via translator modules
 
-    // Dependencies on all individual translator modules
-    implementation(project(":pulsar-components:cmf:inventory-update-translator"))
-    implementation(project(":pulsar-components:cmf:order-record-translator"))
-    implementation(project(":pulsar-components:cmf:payment-notice-translator"))
-    implementation(project(":pulsar-components:cmf:shipment-status-translator"))
-    implementation(project(":pulsar-components:cmf:user-profile-translator"))
+    // Dependency on the new vehicle telemetry translators module
+    implementation(project(":pulsar-components:cmf:vehicle-telemetry-translators"))
+
+    // Dependencies on placeholder translator modules removed as they no longer exist.
 
     implementation(project(":libs")) // Common code, schemas
     implementation(libs.jackson.databind)
