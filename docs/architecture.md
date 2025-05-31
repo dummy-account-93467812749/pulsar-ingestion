@@ -72,6 +72,48 @@ Located under `pulsar-components/cmf/` (Common Message Format translators), thes
 -   **Artifacts:** Each translator submodule is independently built and produces its own lean NAR file (Pulsar Archive). These NARs are then collected by the `bundleForDeploy` task for deployment.
 -   **Testing:** Unit tests are specific to each translator submodule. Shared integration tests for translators are located in the `pulsar-components:cmf:translators-integration` module.
 
+### Vehicle Telemetry Processing (CMF)
+
+A key application of translator functions within this project is the processing of vehicle telemetry data. To standardize this data from various sources, a **Vehicle Telemetry Common Message Format (CMF)** has been introduced.
+
+**1. Vehicle Telemetry Common Message Format (CMF)**
+
+*   **Purpose:** The CMF aims to provide a unified structure for telemetry data ingested from different providers (e.g., Geotab, CalAmp, Ford). This standardization simplifies downstream processing, analytics, and storage.
+*   **Key Structures:**
+    *   `CommonMessageFormat<T>`: The generic envelope for all CMF messages. It includes common fields like `sourceType`, `vehicleId`, `eventTimestamp`, `receivedTimestamp`, and the actual telemetry payload.
+    *   `CommonTelemetry`: A standardized structure within `CommonMessageFormat` for common telemetry signals like latitude, longitude, speed, odometer, ignition status, fuel level, etc.
+    *   `CommonEvents`: Defines a standard way to represent discrete events from the vehicle (e.g., ignition on/off, harsh braking). (Future enhancement, less focus in current implementation).
+    *   `SourceType`: An enum (e.g., `GEOTAB`, `CALAMP`, `FORD`) indicating the original data source, present in `CommonMessageFormat`.
+    *   `sourceSpecificData: T`: The generic type parameter `T` in `CommonMessageFormat<T>` allows for the inclusion of raw or additional processed data specific to the original source, ensuring no data loss and providing context for unique vendor attributes.
+*   **Output Topic:** All telemetry messages transformed into CMF are routed to a central Pulsar topic:
+    *   `persistent://acme/ingest/vehicle-telemetry-common-format`
+
+**2. Vehicle Telemetry Translators**
+
+These Pulsar Functions are responsible for converting source-specific vehicle telemetry messages into the CMF. Each translator is designed for a particular data provider.
+
+*   **GeotabTranslator:**
+    *   **Role:** Converts Geotab's specific JSON format into `CommonMessageFormat<GeotabInputMessage.SourceSpecificData>`.
+    *   **Input Topic:** Consumes raw Geotab messages from `raw-kinesis-events`.
+*   **CalAmpTranslator:**
+    *   **Role:** Converts CalAmp's specific JSON format into `CommonMessageFormat<CalAmpInputMessage.SourceSpecificData>`.
+    *   **Input Topic:** Consumes raw CalAmp messages from `raw-kafka-events`.
+*   **FordTranslator:**
+    *   **Role:** Converts Ford's specific JSON format (e.g., from Ford Pro Telematics) into `CommonMessageFormat<FordInputMessage.SourceSpecificData>`.
+    *   **Input Topic:** Consumes raw Ford messages from `raw-http-events`.
+
+**3. Data Flow Update**
+
+The introduction of the CMF and its associated translators modifies the data flow for vehicle telemetry as follows:
+
+1.  Raw, source-specific vehicle data (e.g., from Geotab, CalAmp, Ford) is ingested into dedicated "raw" Pulsar topics (`raw-kinesis-events`, `raw-kafka-events`, `raw-http-events` respectively) by the appropriate source connectors.
+2.  The respective Vehicle Telemetry Translator function (e.g., `GeotabTranslator`) consumes messages from its designated raw input topic.
+3.  The translator function transforms the source-specific message into the `CommonMessageFormat`.
+4.  The resulting CMF message is then published to the common output topic: `persistent://acme/ingest/vehicle-telemetry-common-format`.
+5.  Downstream consumers, such as an `event-type-splitter` function or analytics jobs, can now subscribe to this single, standardized topic to process telemetry data from all supported vehicle sources. This simplifies downstream logic as these components only need to understand the CMF structure.
+
+This CMF-based approach enhances modularity and makes it easier to integrate new vehicle telemetry sources in the future by simply developing a new translator for that source.
+
 ---
 
 *Further sections on Deployment, etc., would follow in a complete architecture document.*

@@ -39,36 +39,6 @@ connectors:
     output: raw-pulsar-events
 
 functions:
-  user-profile-translator:
-    image: ghcr.io/acme/translators:0.1.0
-    className: com.example.pulsar.functions.cmf.UserProfileTranslator
-    inputs:
-      - raw-azure-events
-      - raw-pulsar-events
-    output: common-events
-  order-record-translator:
-    image: ghcr.io/acme/translators:0.1.0
-    className: com.example.pulsar.functions.cmf.OrderRecordTranslator
-    inputs:
-      - raw-grpc-events
-      - raw-rabbitmq-events
-    output: common-events
-  inventory-update-translator:
-    image: ghcr.io/acme/translators:0.1.0
-    className: com.example.pulsar.functions.cmf.InventoryUpdateTranslator
-    input: raw-http-events # Single input
-    output: common-events
-  payment-notice-translator:
-    image: ghcr.io/acme/translators:0.1.0
-    className: com.example.pulsar.functions.cmf.PaymentNoticeTranslator
-    input: raw-kafka-events # Single input
-    output: common-events
-  shipment-status-translator:
-    image: ghcr.io/acme/translators:0.1.0
-    className: com.example.pulsar.functions.cmf.ShipmentStatusTranslator
-    input: raw-kinesis-events # Single input
-    output: common-events
-
   geotab-translator:
     image: ghcr.io/acme/translators:0.1.0
     className: com.example.pulsar.functions.cmf.translators.GeotabTranslator
@@ -90,9 +60,9 @@ functions:
       - raw-http-events # Example input
     output: persistent://acme/ingest/vehicle-telemetry-common-format
 
-  event-type-splitter:
+  filterer: # Renamed from event-type-splitter
     nar: filterer.nar
-    image: ghcr.io/acme/splitter:0.1.0
-    className: com.example.pulsar.filterer.EventTypeSplitter
+    image: ghcr.io/acme/splitter:0.1.0 # Image name might eventually be updated to acme/filterer
+    className: com.example.pulsar.filterer.Filterer # Renamed class
     input: persistent://acme/ingest/vehicle-telemetry-common-format
     # Outputs are dynamic for this function, so not listed here.

@@ -1,5 +1,17 @@
-package com.example.pulsar.functions.cmf
+package com.example.pulsar.functions.transforms.translators // Corrected package
 
+import com.example.pulsar.functions.cmf.OrderRecordTranslator // Keep existing non-CMF translators for now
+import com.example.pulsar.functions.cmf.InventoryUpdateTranslator
+import com.example.pulsar.functions.cmf.PaymentNoticeTranslator
+import com.example.pulsar.functions.cmf.ShipmentStatusTranslator
+import com.example.pulsar.functions.cmf.UserProfileTranslator
+// import com.example.pulsar.cmf.format.CommonMessageFormat // TODO: Will need this for typed deserialization if we go that route
+import com.example.pulsar.functions.cmf.translators.GeotabTranslator
+import com.example.pulsar.functions.cmf.translators.CalAmpTranslator
+import com.example.pulsar.functions.cmf.translators.FordTranslator
+// import com.example.pulsar.cmf.format.geotab.GeotabInputMessage // TODO: And this
+// import com.example.pulsar.cmf.format.calamp.CalAmpInputMessage // TODO: And this
+// import com.example.pulsar.cmf.format.ford.FordInputMessage // TODO: And this
 import com.example.pulsar.libs.CommonEvent
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
@@ -22,6 +34,7 @@ import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assertions.fail
 import org.junit.jupiter.api.BeforeAll
+import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.testcontainers.containers.PulsarContainer
@@ -56,11 +69,15 @@ class TranslatorsIntegrationTest {
     private lateinit var pulsar: PulsarContainer
     private lateinit var client: PulsarClient
     private lateinit var admin: PulsarAdmin
-    private val objectMapper: ObjectMapper = jacksonObjectMapper()
+    private val objectMapper: ObjectMapper = jacksonObjectMapper() // Already present, good.
 
-    private val inputTopicBase = "persistent://public/default/test-input-topic-"
-    private val outputTopicBase = "persistent://public/default/test-output-topic-"
-    private val functionNameBase = "test-translator-function-"
+    // Bases for old tests - keep them for non-CMF tests
+    private val inputTopicBaseOld = "persistent://public/default/test-input-topic-"
+    private val outputTopicBaseOld = "persistent://public/default/test-output-topic-"
+    private val functionNameBaseOld = "test-translator-function-"
+    // New base for CMF function names, input topics for CMF tests will be more specific
+    private val cmfFunctionNameBase = "test-cmf-translator-function-"
+
 
     @BeforeAll
     fun startPulsarAndClients() { // Renamed from setupSharedComponents
@@ -164,7 +181,7 @@ class TranslatorsIntegrationTest {
             .build()
 
         var producer: Producer<String>? = null
-        var consumer: Consumer<String>? = null
+        var consumer: Consumer<String>? = null // This consumer is for the outputTopicName
 
         try {
             functionRunner.start(false) // Starts in a separate thread
@@ -247,10 +264,10 @@ class TranslatorsIntegrationTest {
         val suffix = "userprofile-" + UUID.randomUUID().toString().take(8)
 
         runTestForFunction(
-            UserProfileTranslator::class.java,
-            inputTopicBase + suffix,
-            outputTopicBase + suffix,
-            functionNameBase + suffix,
+            UserProfileTranslator::class.java, // Existing test, uses old base names
+            inputTopicBaseOld + suffix,
+            outputTopicBaseOld + suffix,
+            functionNameBaseOld + suffix,
             sample,
             "user-service",
             "USER_PROFILE_EVENT",
@@ -269,10 +286,10 @@ class TranslatorsIntegrationTest {
         val suffix = "orderrecord-" + UUID.randomUUID().toString().take(8)
 
         runTestForFunction(
-            OrderRecordTranslator::class.java,
-            inputTopicBase + suffix,
-            outputTopicBase + suffix,
-            functionNameBase + suffix,
+            OrderRecordTranslator::class.java, // Existing test
+            inputTopicBaseOld + suffix,
+            outputTopicBaseOld + suffix,
+            functionNameBaseOld + suffix,
             sample,
             "order-service",
             "ORDER_EVENT",
@@ -292,10 +309,10 @@ class TranslatorsIntegrationTest {
         val suffix = "inventoryupdate-" + UUID.randomUUID().toString().take(8)
 
         runTestForFunction(
-            InventoryUpdateTranslator::class.java,
-            inputTopicBase + suffix,
-            outputTopicBase + suffix,
-            functionNameBase + suffix,
+            InventoryUpdateTranslator::class.java, // Existing test
+            inputTopicBaseOld + suffix,
+            outputTopicBaseOld + suffix,
+            functionNameBaseOld + suffix,
             sample,
             "inventory-service",
             "INVENTORY_EVENT",
@@ -314,10 +331,10 @@ class TranslatorsIntegrationTest {
         val suffix = "paymentnotice-" + UUID.randomUUID().toString().take(8)
 
         runTestForFunction(
-            PaymentNoticeTranslator::class.java,
-            inputTopicBase + suffix,
-            outputTopicBase + suffix,
-            functionNameBase + suffix,
+            PaymentNoticeTranslator::class.java, // Existing test
+            inputTopicBaseOld + suffix,
+            outputTopicBaseOld + suffix,
+            functionNameBaseOld + suffix,
             sample,
             "payment-gateway",
             "PAYMENT_EVENT",
@@ -337,10 +354,10 @@ class TranslatorsIntegrationTest {
         val suffix = "shipmentstatus-" + UUID.randomUUID().toString().take(8)
 
         runTestForFunction(
-            ShipmentStatusTranslator::class.java,
-            inputTopicBase + suffix,
-            outputTopicBase + suffix,
-            functionNameBase + suffix,
+            ShipmentStatusTranslator::class.java, // Existing test
+            inputTopicBaseOld + suffix,
+            outputTopicBaseOld + suffix,
+            functionNameBaseOld + suffix,
             sample,
             "shipping-service",
             "SHIPMENT_EVENT",
@@ -349,6 +366,213 @@ class TranslatorsIntegrationTest {
                 assertEquals(orig.get("shipId").asText(), data.get("shipId").asText())
                 assertEquals(orig.get("status").asText(), data.get("status").asText())
             },
+        )
+    }
+
+    // CMF Tests
+    private val CMF_OUTPUT_TOPIC = "persistent://acme/ingest/vehicle-telemetry-common-format" // Centralized CMF output topic
+    private val RAW_KINESIS_EVENTS_TOPIC_BASE = "persistent://public/default/raw-kinesis-events-"
+    private val RAW_KAFKA_EVENTS_TOPIC_BASE = "persistent://public/default/raw-kafka-events-" // For CalAmp
+    private val RAW_HTTP_EVENTS_TOPIC_BASE = "persistent://public/default/raw-http-events-" // For Ford
+
+
+    // Helper to deserialize CMF message for typed assertions
+    // Assuming CommonMessageFormat is available and jackson can handle it
+    // You might need to register specific modules if not working out of the box
+    // For now, we'll work with JsonNode for data, and specific assertions for sourceSpecificData if needed
+    // inline fun <reified T> deserializeCmfData(jsonNode: JsonNode?): T? {
+    //     return jsonNode?.let { objectMapper.treeToValue(it, T::class.java) }
+    // }
+
+    @Test
+    fun testGeotabTranslator() {
+        val deviceId = "testDevice123"
+        val recordDateTime = "2023-10-26T10:00:00Z"
+        val latitude = 34.0522
+        val longitude = -118.2437
+        val odometerMi = 12345.6
+        val ignition = true
+        val fuelLevelPercent = 75.5
+        val customData = "geotab_specific_value"
+
+        val sampleGeotabInput = """
+        {
+            "Device_ID": "$deviceId",
+            "Record_DateTime": "$recordDateTime",
+            "Latitude": $latitude,
+            "Longitude": $longitude,
+            "Odometer_mi": $odometerMi,
+            "Ignition": $ignition,
+            "FuelLevel_percent": $fuelLevelPercent,
+            "customData": "$customData"
+        }
+        """.trimIndent()
+
+        val suffix = "geotab-" + UUID.randomUUID().toString().take(8)
+        // The function itself is configured to listen to "raw-kinesis-events".
+        // For testing, we send to a unique instance of a topic that mimics this,
+        // e.g., raw-kinesis-events-somerandomsuffix, to isolate test runs.
+        // The FunctionConfig's 'inputs' will use this specific topic for the test.
+        val testSpecificInputTopic = RAW_KINESIS_EVENTS_TOPIC_BASE + suffix
+
+        // Ensure the specific input topic for the test is created (handled by runTestForFunction)
+
+        runTestForFunction(
+            GeotabTranslator::class.java,
+            testSpecificInputTopic, // Test-specific input topic
+            CMF_OUTPUT_TOPIC,       // Fixed CMF output topic
+            cmfFunctionNameBase + suffix,
+            sampleGeotabInput,
+            "GEOTAB",
+            "VEHICLE_TELEMETRY_EVENT", // Assuming a generic event type for CMF
+            { it.get("Record_DateTime").asText() }, // Timestamp extractor from original input
+            { originalJson, commonEventData -> // commonEventData is the 'data' field of CommonEvent (the CMF payload)
+                // Assertions based on CommonMessageFormat structure
+                assertEquals("GEOTAB", commonEventData.get("sourceType").asText())
+                assertEquals(deviceId, commonEventData.get("vehicleId").asText())
+                // The 'timestamp' field in CommonEvent (outer envelope) is already asserted by runTestForFunction
+                // to match the extracted input timestamp.
+                // Here we assert 'eventTimestamp' within the CMF payload.
+                assertEquals(recordDateTime, commonEventData.get("eventTimestamp").asText())
+
+
+                val telemetry = commonEventData.get("telemetry")
+                assertNotNull(telemetry, "Telemetry data should not be null")
+                assertEquals(latitude, telemetry.get("latitude").asDouble(), 0.0001)
+                assertEquals(longitude, telemetry.get("longitude").asDouble(), 0.0001)
+                assertEquals(odometerMi, telemetry.get("odometer").asDouble(), 0.001)
+                assertEquals("ON", telemetry.get("ignitionStatus").asText()) // Geotab: true -> ON
+                assertEquals(fuelLevelPercent, telemetry.get("fuelLevelPct").asDouble(), 0.01)
+
+                val sourceSpecificData = commonEventData.get("sourceSpecificData")
+                assertNotNull(sourceSpecificData, "SourceSpecificData should not be null")
+                // Assuming GeotabTranslator's output for sourceSpecificData matches GeotabInputMessage.SourceSpecificData structure
+                assertEquals(customData, sourceSpecificData.get("customData").asText())
+            }
+        )
+    }
+
+    @Test
+    fun testCalAmpTranslator() {
+        val unitId = "calAmpDevice456"
+        val msgTs = 1698314400L // Epoch seconds for 2023-10-26T10:00:00Z
+        val latitude = 35.6895
+        val longitude = 139.6917
+        val odomMi = 54321.0
+        val ignStatus = 1 // maps to ON
+        val fuelPercent = 60.0
+        val calampExtraInfo = "some_calamp_info"
+
+        val sampleCalAmpInput = """
+        {
+            "unit_id": "$unitId",
+            "msg_ts": $msgTs,
+            "gps_lat": $latitude,
+            "gps_lon": $longitude,
+            "odom_mi": $odomMi,
+            "ign_status": $ignStatus,
+            "fuel_percent": $fuelPercent,
+            "calamp_extra": {
+                "info": "$calampExtraInfo"
+            }
+        }
+        """.trimIndent()
+
+        val suffix = "calamp-" + UUID.randomUUID().toString().take(8)
+        val testSpecificInputTopic = RAW_KAFKA_EVENTS_TOPIC_BASE + suffix
+
+        runTestForFunction(
+            CalAmpTranslator::class.java,
+            testSpecificInputTopic,
+            CMF_OUTPUT_TOPIC,
+            cmfFunctionNameBase + suffix,
+            sampleCalAmpInput,
+            "CALAMP",
+            "VEHICLE_TELEMETRY_EVENT",
+            { epochSecondsToISO(it.get("msg_ts").asLong()) }, // CalAmp timestamp is epoch seconds
+            { originalJson, commonEventData ->
+                assertEquals("CALAMP", commonEventData.get("sourceType").asText())
+                assertEquals(unitId, commonEventData.get("vehicleId").asText())
+                assertEquals(epochSecondsToISO(msgTs), commonEventData.get("eventTimestamp").asText())
+
+                val telemetry = commonEventData.get("telemetry")
+                assertNotNull(telemetry)
+                assertEquals(latitude, telemetry.get("latitude").asDouble(), 0.0001)
+                assertEquals(longitude, telemetry.get("longitude").asDouble(), 0.0001)
+                assertEquals(odomMi, telemetry.get("odometer").asDouble(), 0.001)
+                assertEquals("ON", telemetry.get("ignitionStatus").asText()) // CalAmp: 1 -> ON
+                assertEquals(fuelPercent, telemetry.get("fuelLevelPct").asDouble(), 0.01)
+
+                val sourceSpecificData = commonEventData.get("sourceSpecificData")
+                assertNotNull(sourceSpecificData)
+                assertEquals(calampExtraInfo, sourceSpecificData.get("calamp_extra").get("info").asText())
+            }
+        )
+    }
+
+    @Test
+    fun testFordTranslator() {
+        val vin = "FORDVIN789"
+        val esn = "FORDSN001"
+        val captureTime = 1698318000000L // Epoch milliseconds for 2023-10-26T11:00:00Z
+        val latitude = 40.7128
+        val longitude = -74.0060
+        val fuelLevelPct = 80.0 // Ford uses double for fuel_level_pct
+        val fordSpecificField = "value123"
+
+        val sampleFordInput = """
+        {
+            "vin": "$vin",
+            "esn": "$esn",
+            "captureTime": $captureTime,
+            "coordinates": {
+                "lat": $latitude,
+                "lon": $longitude
+            },
+            "fuel_level_pct": $fuelLevelPct,
+            "ford_specific_field": "$fordSpecificField"
+        }
+        """.trimIndent()
+
+        val suffix = "ford-" + UUID.randomUUID().toString().take(8)
+        val testSpecificInputTopic = RAW_HTTP_EVENTS_TOPIC_BASE + suffix
+
+        runTestForFunction(
+            FordTranslator::class.java,
+            testSpecificInputTopic,
+            CMF_OUTPUT_TOPIC,
+            cmfFunctionNameBase + suffix,
+            sampleFordInput,
+            "FORD",
+            "VEHICLE_TELEMETRY_EVENT",
+            // Ford timestamp is epoch milliseconds, convert to ISO string
+            { java.time.Instant.ofEpochMilli(it.get("captureTime").asLong()).atOffset(ZoneOffset.UTC).format(ISO_FORMATTER) },
+            { originalJson, commonEventData ->
+                assertEquals("FORD", commonEventData.get("sourceType").asText())
+                assertEquals(vin, commonEventData.get("vehicleId").asText())
+                val expectedTimestamp = java.time.Instant.ofEpochMilli(captureTime).atOffset(ZoneOffset.UTC).format(ISO_FORMATTER)
+                assertEquals(expectedTimestamp, commonEventData.get("eventTimestamp").asText())
+
+                val telemetry = commonEventData.get("telemetry")
+                assertNotNull(telemetry)
+                assertEquals(latitude, telemetry.get("latitude").asDouble(), 0.0001)
+                assertEquals(longitude, telemetry.get("longitude").asDouble(), 0.0001)
+                // Ford does not provide odometer directly in this sample, so we don't assert it.
+                // Ford does not provide ignition status directly, so we don't assert it.
+                assertEquals(fuelLevelPct, telemetry.get("fuelLevelPct").asDouble(), 0.01)
+
+
+                val sourceSpecificData = commonEventData.get("sourceSpecificData")
+                assertNotNull(sourceSpecificData)
+                assertEquals(esn, sourceSpecificData.get("esn").asText())
+                assertEquals(fordSpecificField, sourceSpecificData.get("ford_specific_field").asText())
+                // Also check that original "coordinates" and "fuel_level_pct" are there if translator keeps them
+                assertEquals(latitude, sourceSpecificData.get("coordinates").get("lat").asDouble(), 0.0001)
+                assertEquals(longitude, sourceSpecificData.get("coordinates").get("lon").asDouble(), 0.0001)
+                assertEquals(fuelLevelPct, sourceSpecificData.get("fuel_level_pct").asDouble(),0.01)
+
+
+            }
         )
     }
 }
