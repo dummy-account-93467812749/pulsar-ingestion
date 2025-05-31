@@ -3,6 +3,7 @@
 import argparse
 import json
 import logging
+import random
 import time
 import uuid
 from datetime import datetime, timezone
@@ -27,8 +28,18 @@ def generate_payload(connector_type: str, base_template_str: str = None) -> dict
     _iso_timestamp = datetime.now(timezone.utc).isoformat()
     _epoch_seconds = str(int(datetime.now(timezone.utc).timestamp()))
 
-    if connector_type == 'kinesis':
-        template = '{"shipId": "<uuid>", "status": "DELIVERED", "deliveredAt": "<epoch_seconds>"}'
+    # CMF Geotab specific payload for Kinesis
+    if connector_type == 'kinesis': # Assuming 'kinesis' connector will be used for Geotab
+        return {
+            "Device_ID": _uuid,
+            "Record_DateTime": _iso_timestamp,
+            "Latitude": round(random.uniform(-90.0, 90.0), 6),
+            "Longitude": round(random.uniform(-180.0, 180.0), 6),
+            "Odometer_mi": round(random.uniform(0.0, 500000.0), 1),
+            "Ignition": random.choice([True, False]),
+            "FuelLevel_percent": round(random.uniform(0.0, 100.0), 2),
+            "customData": f"geotab_load_test_data_{_uuid}"
+        }
     elif connector_type == 'kafka':
         template = '{"txnId": "<uuid>", "amount": 99.95, "currency": "USD", "time": "<iso-timestamp>"}'
     elif connector_type == 'http':
@@ -157,7 +168,8 @@ def main():
                         help="RabbitMQ password (e.g., 'password' for the provided docker-compose)")
     parser.add_argument('--rabbitmq-queue', default='my-queue', help="RabbitMQ queue")
 
-    parser.add_argument('--kinesis-stream-name', default='my-kinesis-stream', help="Kinesis stream name")
+    parser.add_argument('--kinesis-stream-name', default='raw-kinesis-events', # UPDATED default for CMF Geotab
+                        help="Kinesis stream name (defaulted to 'raw-kinesis-events' for CMF Geotab)")
     parser.add_argument('--kinesis-aws-endpoint-url', default='http://localhost:4566', # Aligns with Docker Compose LocalStack
                         help="Kinesis AWS endpoint URL (e.g., http://localhost:4566 for LocalStack)")
     parser.add_argument('--kinesis-aws-region', default='us-east-1', # Aligns with Docker Compose LocalStack DEFAULT_REGION

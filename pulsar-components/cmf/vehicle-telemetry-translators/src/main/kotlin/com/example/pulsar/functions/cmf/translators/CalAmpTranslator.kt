@@ -13,22 +13,66 @@ import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.UUID
 
-// Define the invented CalAmp-specific input format
+/**
+ * Represents the structure of an "invented" CalAmp-specific input message.
+ * This data class is used for demonstration and testing purposes, defining a potential input format
+ * that the [CalAmpTranslator] can process. Real CalAmp messages may have a different structure.
+ *
+ * @property unitId The unique identifier of the CalAmp unit/device. Maps to `CommonMessageFormat.deviceId`.
+ * @property vehicleIdentifier The unique identifier of the vehicle, often the VIN. Maps to `CommonMessageFormat.vehicleId`.
+ * @property messageTimestamp The timestamp of the message in epoch seconds. Maps to `CommonMessageFormat.dateTime` (converted to ISO 8601) and `CommonMessageFormat.epochSource` (converted to milliseconds).
+ * @property gpsLat The latitude coordinate of the vehicle's location. Maps to `CommonTelemetry.location.lat`.
+ * @property gpsLon The longitude coordinate of the vehicle's location. Maps to `CommonTelemetry.location.lon`.
+ * @property speedMph The vehicle's speed in miles per hour. Maps to `CommonTelemetry.speedGpsMph`.
+ * @property fuelPercent The fuel level as a percentage. Maps to `CommonTelemetry.fuelLevelPct`.
+ * @property batteryVoltage The vehicle's battery voltage. Maps to `CommonTelemetry.batteryVoltage`.
+ * @property calAmpSpecificValue An example custom field specific to CalAmp. Populates `CommonMessageFormat.sourceSpecificData`.
+ */
 data class CalAmpInputMessage(
     @JsonProperty("unit_id") val unitId: String,
-    @JsonProperty("vid") val vehicleIdentifier: String,
+    @JsonProperty("vid") val vehicleIdentifier: String, // Typically VIN
     @JsonProperty("msg_ts") val messageTimestamp: Long, // Epoch seconds
     @JsonProperty("gps_lat") val gpsLat: Double,
     @JsonProperty("gps_lon") val gpsLon: Double,
     @JsonProperty("speed_mph") val speedMph: Double? = null,
     @JsonProperty("fuel_percent") val fuelPercent: Double? = null,
     @JsonProperty("voltage") val batteryVoltage: Double? = null,
-    // Add any other CalAmp-specific fields here
+    // Example of a field that would go into sourceSpecificData
     val calAmpSpecificValue: String? = null
 )
 
 /**
- * Translates "invented" CalAmp-specific messages into the CommonMessageFormat.
+ * A Pulsar Function to translate CalAmp-specific vehicle telemetry messages into the [CommonMessageFormat].
+ *
+ * This translator consumes messages from a designated input topic (typically `raw-kafka-events` for CalAmp data)
+ * which are expected to be JSON strings conforming to the [CalAmpInputMessage] structure.
+ *
+ * **Expected Input JSON Format (example based on [CalAmpInputMessage]):**
+ * ```json
+ * {
+ *   "unit_id": "calamp-dev-789",
+ *   "vid": "TESTVIN9876543210",
+ *   "msg_ts": 1698314400,
+ *   "gps_lat": 35.6895,
+ *   "gps_lon": 139.6917,
+ *   "speed_mph": 55.0,
+ *   "fuel_percent": 60.2,
+ *   "voltage": 12.5,
+ *   "calAmpSpecificValue": "CalAmpExtraInfo"
+ * }
+ * ```
+ *
+ * **Mapping to [CommonMessageFormat]:**
+ * - `unit_id` -> `CommonMessageFormat.deviceId`
+ * - `vid` -> `CommonMessageFormat.vehicleId`, `CommonMessageFormat.partitionKey`
+ * - `msg_ts` -> `CommonMessageFormat.dateTime` (converted from epoch seconds to ISO 8601), `CommonMessageFormat.epochSource` (converted to epoch ms)
+ * - `gps_lat`, `gps_lon` -> `CommonTelemetry.location`
+ * - `speed_mph` -> `CommonTelemetry.speedGpsMph`
+ * - `fuel_percent` -> `CommonTelemetry.fuelLevelPct`
+ * - `voltage` -> `CommonTelemetry.batteryVoltage`
+ * - `calAmpSpecificValue` and any other non-mapped fields from `CalAmpInputMessage` are placed into `CommonMessageFormat.sourceSpecificData`.
+ *
+ * The translator populates `CommonMessageFormat.sourceType` with [SourceType.CalAmp].
  */
 class CalAmpTranslator : Function<String, String> {
 

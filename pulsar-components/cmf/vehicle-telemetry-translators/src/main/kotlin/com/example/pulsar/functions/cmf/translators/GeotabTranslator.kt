@@ -14,24 +14,73 @@ import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.UUID
 
-// Define the invented Geotab-specific input format
+/**
+ * Represents the structure of an "invented" Geotab-specific input message.
+ * This data class is used for demonstration and testing purposes, defining a potential input format
+ * that the [GeotabTranslator] can process. Real Geotab messages may have a different structure.
+ *
+ * @property deviceId The unique identifier of the Geotab device. Maps to `CommonMessageFormat.deviceId`.
+ * @property vehicleId The unique identifier of the vehicle, often the VIN. Maps to `CommonMessageFormat.vehicleId`.
+ * @property recordDateTime The timestamp of the record in ISO 8601 format (e.g., "2023-10-26T10:00:00Z"). Maps to `CommonMessageFormat.dateTime`.
+ * @property latitude The latitude coordinate of the vehicle's location. Maps to `CommonTelemetry.location.lat`.
+ * @property longitude The longitude coordinate of the vehicle's location. Maps to `CommonTelemetry.location.lon`.
+ * @property odometerMiles The vehicle's odometer reading in miles. Maps to `CommonTelemetry.odometerCanMi`.
+ * @property engineRpm The engine speed in revolutions per minute. Maps to `CommonTelemetry.engineRpm`.
+ * @property fuelLevelPct The fuel level as a percentage. Maps to `CommonTelemetry.fuelLevelPct`.
+ * @property ignitionStatusStr The ignition status as a string (e.g., "ON", "OFF"). Maps to `CommonTelemetry.ignitionStatus`.
+ * @property customGeotabField1 An example custom field specific to Geotab. Populates `CommonMessageFormat.sourceSpecificData`.
+ * @property customGeotabField2 Another example custom field specific to Geotab. Populates `CommonMessageFormat.sourceSpecificData`.
+ */
 data class GeotabInputMessage(
     @JsonProperty("Device_ID") val deviceId: String,
-    @JsonProperty("Vehicle_ID") val vehicleId: String,
-    @JsonProperty("Record_DateTime") val recordDateTime: String, // Assuming ISO 8601 format "yyyy-MM-dd'T'HH:mm:ss.SSSX"
+    @JsonProperty("Vehicle_ID") val vehicleId: String, // Typically VIN
+    @JsonProperty("Record_DateTime") val recordDateTime: String, // ISO 8601 format "yyyy-MM-dd'T'HH:mm:ssZ" or similar
     @JsonProperty("Latitude") val latitude: Double,
     @JsonProperty("Longitude") val longitude: Double,
     @JsonProperty("Odometer_mi") val odometerMiles: Double? = null,
     @JsonProperty("EngineSpeed_rpm") val engineRpm: Double? = null,
     @JsonProperty("Fuel_Level_pct") val fuelLevelPct: Double? = null,
-    @JsonProperty("Ignition_Status") val ignitionStatusStr: String? = null, // e.g., "ON", "OFF"
-    // Add any other Geotab-specific fields here. These will go into sourceSpecificData.
+    @JsonProperty("Ignition_Status") val ignitionStatusStr: String? = null, // e.g., "ON", "OFF", "true", "false"
+    // Example of fields that would go into sourceSpecificData
     val customGeotabField1: String? = null,
     val customGeotabField2: Int? = null
 )
 
 /**
- * Translates "invented" Geotab-specific messages into the CommonMessageFormat.
+ * A Pulsar Function to translate Geotab-specific vehicle telemetry messages into the [CommonMessageFormat].
+ *
+ * This translator consumes messages from a designated input topic (typically `raw-kinesis-events` for Geotab data)
+ * which are expected to be JSON strings conforming to the [GeotabInputMessage] structure.
+ *
+ * **Expected Input JSON Format (example based on [GeotabInputMessage]):**
+ * ```json
+ * {
+ *   "Device_ID": "g12345",
+ *   "Vehicle_ID": "TESTVIN1234567890",
+ *   "Record_DateTime": "2023-10-27T14:30:00Z",
+ *   "Latitude": 34.0522,
+ *   "Longitude": -118.2437,
+ *   "Odometer_mi": 12345.6,
+ *   "EngineSpeed_rpm": 1500.0,
+ *   "Fuel_Level_pct": 75.5,
+ *   "Ignition_Status": "ON",
+ *   "customGeotabField1": "someValue",
+ *   "customGeotabField2": 100
+ * }
+ * ```
+ *
+ * **Mapping to [CommonMessageFormat]:**
+ * - `Device_ID` -> `CommonMessageFormat.deviceId`
+ * - `Vehicle_ID` -> `CommonMessageFormat.vehicleId`, `CommonMessageFormat.partitionKey`
+ * - `Record_DateTime` -> `CommonMessageFormat.dateTime`, `CommonMessageFormat.epochSource` (converted to epoch ms)
+ * - `Latitude`, `Longitude` -> `CommonTelemetry.location`
+ * - `Odometer_mi` -> `CommonTelemetry.odometerCanMi`
+ * - `EngineSpeed_rpm` -> `CommonTelemetry.engineRpm`
+ * - `Fuel_Level_pct` -> `CommonTelemetry.fuelLevelPct`
+ * - `Ignition_Status` -> `CommonTelemetry.ignitionStatus` (parsed from string to enum)
+ * - Other fields like `customGeotabField1`, `customGeotabField2` are placed into `CommonMessageFormat.sourceSpecificData`.
+ *
+ * The translator populates `CommonMessageFormat.sourceType` with [SourceType.Geotab].
  */
 class GeotabTranslator : Function<String, String> {
 
